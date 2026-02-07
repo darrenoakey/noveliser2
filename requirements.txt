@@ -1,0 +1,8 @@
+claude-agent-sdk
+colorama
+pydantic
+pillow
+ebooklib
+pytest
+setproctitle
+ruff

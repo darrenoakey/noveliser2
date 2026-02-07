@@ -1,0 +1,221 @@
+#!/usr/bin/env python3
+
+import argparse
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+import setproctitle
+
+# ##################################################################
+# paths relative to this script, not cwd
+SCRIPT_DIR = Path(__file__).parent.resolve()
+SRC_DIR = SCRIPT_DIR / "src"
+OUTPUT_DIR = SCRIPT_DIR / "output"
+VENV_DIR = SCRIPT_DIR / ".venv"
+
+
+# ##################################################################
+# activate venv if present
+def activate_venv() -> None:
+    if VENV_DIR.exists() and "VIRTUAL_ENV" not in os.environ:
+        venv_python = VENV_DIR / "bin" / "python"
+        if venv_python.exists():
+            os.execv(str(venv_python), [str(venv_python)] + sys.argv)
+
+
+activate_venv()
+
+# add src to path after venv activation
+sys.path.insert(0, str(SRC_DIR))
+
+setproctitle.setproctitle("noveliser2")
+
+
+# ##################################################################
+# command create
+# generate a new novel from a description
+def command_create(args: argparse.Namespace) -> int:
+    from colorama import init
+    init(autoreset=True)
+
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    from pipeline import write_novel
+    try:
+        write_novel(
+            description=args.description,
+            output_dir=OUTPUT_DIR,
+            num_chapters=args.chapters,
+            sections_per_chapter=args.sections,
+            author=args.author,
+        )
+        return 0
+    except KeyboardInterrupt:
+        print("\nGeneration interrupted by user")
+        return 1
+    except Exception as e:
+        print(f"\nError during generation: {e}")
+        raise
+
+
+# ##################################################################
+# command continue
+# resume an incomplete novel generation
+def command_continue(args: argparse.Namespace) -> int:
+    from colorama import init
+    init(autoreset=True)
+
+    from metadata import find_book_dir_by_title
+    novel_dir = find_book_dir_by_title(OUTPUT_DIR, args.title)
+    if not novel_dir:
+        print(f"No novel found with title: {args.title}")
+        return 1
+
+    from pipeline import write_novel
+    try:
+        write_novel(
+            description="",
+            output_dir=OUTPUT_DIR,
+            continue_novel_dir=novel_dir,
+        )
+        return 0
+    except KeyboardInterrupt:
+        print("\nGeneration interrupted by user")
+        return 1
+    except Exception as e:
+        print(f"\nError during generation: {e}")
+        raise
+
+
+# ##################################################################
+# command list finished
+# show all completed novels
+def command_list_finished(_: argparse.Namespace) -> int:
+    from colorama import init, Fore, Style
+    init(autoreset=True)
+
+    from metadata import list_books_by_status
+    from models import BookStatus
+    books = list_books_by_status(OUTPUT_DIR, BookStatus.FINISHED)
+    if not books:
+        print("No finished books found.")
+        return 0
+    for book in books:
+        print(f"{Fore.GREEN}{book['title']}{Style.RESET_ALL} by {book['author']}")
+        print(f"  {book['description'][:80]}")
+        print(f"  EPUB: {book['epub_path']}")
+        print()
+    return 0
+
+
+# ##################################################################
+# command list ongoing
+# show all in-progress novels
+def command_list_ongoing(_: argparse.Namespace) -> int:
+    from colorama import init, Fore, Style
+    init(autoreset=True)
+
+    from metadata import list_books_by_status
+    from models import BookStatus
+    books = list_books_by_status(OUTPUT_DIR, BookStatus.ONGOING)
+    if not books:
+        print("No ongoing books found.")
+        return 0
+    for book in books:
+        print(f"{Fore.YELLOW}{book['title']}{Style.RESET_ALL}")
+        print(f"  Step: {book['current_step'] or 'unknown'}")
+        print(f"  Completed steps: {book['completed_steps']}")
+        print()
+    return 0
+
+
+# ##################################################################
+# command test
+# generate a quick 1-chapter test novel
+def command_test(_: argparse.Namespace) -> int:
+    from colorama import init
+    init(autoreset=True)
+
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    from pipeline import write_novel
+    write_novel(
+        description="A retired clockmaker discovers that a mysterious antique pocket watch can show glimpses of alternate timelines, but each use accelerates the entropy of the current one.",
+        output_dir=OUTPUT_DIR,
+        num_chapters=1,
+        sections_per_chapter=1,
+        author="Darren Oakey",
+    )
+    return 0
+
+
+# ##################################################################
+# command test bigger
+# generate a 3-chapter test novel
+def command_test_bigger(_: argparse.Namespace) -> int:
+    from colorama import init
+    init(autoreset=True)
+
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    from pipeline import write_novel
+    write_novel(
+        description="In a world where dreams are taxed by the government, a lucid dreamer discovers she can smuggle contraband ideas across the border of consciousness.",
+        output_dir=OUTPUT_DIR,
+        num_chapters=3,
+        sections_per_chapter=2,
+        author="Darren Oakey",
+    )
+    return 0
+
+
+# ##################################################################
+# command check
+# run the full test suite and quality gates
+def command_check(_: argparse.Namespace) -> int:
+    return subprocess.call(["pytest", "-q", "--maxfail=3", "--disable-warnings", str(SRC_DIR)])
+
+
+# ##################################################################
+# main
+# parse arguments and dispatch to the appropriate command
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description="Noveliser2 - AI-powered novel generation")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    p_create = sub.add_parser("create", help="Generate a new novel")
+    p_create.add_argument("description", help="Novel description")
+    p_create.add_argument("--chapters", type=int, default=10, help="Number of chapters (default: 10)")
+    p_create.add_argument("--sections", type=int, default=10, help="Sections per chapter (default: 10)")
+    p_create.add_argument("--author", default="Darren Oakey", help="Author name")
+    p_create.set_defaults(func=command_create)
+
+    p_continue = sub.add_parser("continue", help="Resume an incomplete novel")
+    p_continue.add_argument("title", help="Title of the novel to continue")
+    p_continue.set_defaults(func=command_continue)
+
+    p_list_finished = sub.add_parser("list-finished", help="List finished novels")
+    p_list_finished.set_defaults(func=command_list_finished)
+
+    p_list_ongoing = sub.add_parser("list-ongoing", help="List ongoing novels")
+    p_list_ongoing.set_defaults(func=command_list_ongoing)
+
+    p_test = sub.add_parser("test", help="Generate a quick 1-chapter test novel")
+    p_test.set_defaults(func=command_test)
+
+    p_test_bigger = sub.add_parser("test_bigger", help="Generate a 3-chapter test novel")
+    p_test_bigger.set_defaults(func=command_test_bigger)
+
+    p_check = sub.add_parser("check", help="Run tests and quality gates")
+    p_check.set_defaults(func=command_check)
+
+    args = parser.parse_args(argv)
+    return args.func(args)
+
+
+# ##################################################################
+# standard python pattern for dispatching main
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
