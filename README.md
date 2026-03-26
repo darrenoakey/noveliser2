@@ -107,3 +107,7 @@ Generate a slightly larger 3-chapter test novel:
 ## Output
 
 Generated novels are saved to the `output/` directory as EPUB files with cover art and chapter illustrations.
+
+## License
+
+This project is licensed under [CC BY-NC 4.0](https://darren-static.waft.dev) - free to use and modify, but no commercial use without permission.
