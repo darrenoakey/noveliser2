@@ -7,6 +7,7 @@ from models import (
     BookMetadata, BookStatus, Character, Chapter, ChapterPlan,
     EnhancedOutline, WritingStyle,
 )
+from fact_ledger import FactLedger
 from record import record, reset_novel_dir, set_continue_mode, set_novel_dir, resolve_novel_dir
 from metadata import write_metadata, read_metadata, mark_book_finished
 from generate_title import generate_title
@@ -21,6 +22,7 @@ from break_into_sections import break_into_sections
 from write_section import write_section
 from generate_images import generate_cover, generate_chapter_image
 from epub_generator import create_epub
+from backend import skip_images
 
 
 # ##################################################################
@@ -111,16 +113,19 @@ def write_novel(description: str, output_dir: Path, num_chapters: int = 10,
     chapter_plan = _extract_chapter_plan(chapter_plan_result)
 
     # step 9: generate cover image
-    cover_path = record("Generate cover image",
-                        lambda: generate_cover(title_str, author, novel_dir, theme_values, plot_type_str), novel_dir)
-    if isinstance(cover_path, dict):
-        cover_path = Path(cover_path.get("cover_path", novel_dir / "cover.jpg"))
-    elif isinstance(cover_path, str):
-        cover_path = Path(cover_path)
+    cover_path = novel_dir / "cover.jpg"
+    if not skip_images():
+        cover_path = record("Generate cover image",
+                            lambda: generate_cover(title_str, author, novel_dir, theme_values, plot_type_str), novel_dir)
+        if isinstance(cover_path, dict):
+            cover_path = Path(cover_path.get("cover_path", novel_dir / "cover.jpg"))
+        elif isinstance(cover_path, str):
+            cover_path = Path(cover_path)
 
     # step 10: write all sections
     all_text = ""
-    facts = []
+    ledger_path = novel_dir / "fact_ledger.json"
+    ledger = FactLedger.load(ledger_path)
     content_by_chapter = {}
     chapter_images = {}
 
@@ -128,17 +133,18 @@ def write_novel(description: str, output_dir: Path, num_chapters: int = 10,
         content_by_chapter[chapter.number] = {}
 
         # generate chapter image
-        chapter_img = record(
-            f"Generate chapter {chapter.number} image",
-            lambda ch=chapter: generate_chapter_image(ch.title, ch.chapter_goal, novel_dir, ch.number),
-            novel_dir,
-        )
-        if isinstance(chapter_img, dict):
-            chapter_images[chapter.number] = Path(chapter_img.get("image_path", novel_dir / f"chapter_{chapter.number}.jpg"))
-        elif isinstance(chapter_img, str):
-            chapter_images[chapter.number] = Path(chapter_img)
-        else:
-            chapter_images[chapter.number] = chapter_img
+        if not skip_images():
+            chapter_img = record(
+                f"Generate chapter {chapter.number} image",
+                lambda ch=chapter: generate_chapter_image(ch.title, ch.chapter_goal, novel_dir, ch.number),
+                novel_dir,
+            )
+            if isinstance(chapter_img, dict):
+                chapter_images[chapter.number] = Path(chapter_img.get("image_path", novel_dir / f"chapter_{chapter.number}.jpg"))
+            elif isinstance(chapter_img, str):
+                chapter_images[chapter.number] = Path(chapter_img)
+            else:
+                chapter_images[chapter.number] = chapter_img
 
         # break chapter into sections
         section_plan_result = record(
@@ -153,16 +159,17 @@ def write_novel(description: str, output_dir: Path, num_chapters: int = 10,
 
             section_result = record(
                 f"Write chapter {chapter.number} section {section.number}",
-                lambda ch=chapter, sec=section, txt=all_text, f=facts: write_section(
-                    ch, sec, txt, f, writing_style, chapter_plan, is_final
+                lambda ch=chapter, sec=section, txt=all_text, lg=ledger: write_section(
+                    ch, sec, txt, lg, writing_style, chapter_plan, is_final
                 ),
                 novel_dir,
             )
 
-            section_text = section_result.text if hasattr(section_result, "text") else section_result.get("text", "")
-            new_facts = section_result.new_facts if hasattr(section_result, "new_facts") else section_result.get("new_facts", [])
+            section_text, replayed_facts = _extract_section_result(section_result)
+            if replayed_facts:
+                ledger.add_all(replayed_facts)
+            ledger.save(ledger_path)
             all_text += "\n\n" + section_text
-            facts.extend(new_facts)
             content_by_chapter[chapter.number][section.number] = section_text
 
     # step 11: create epub
@@ -271,6 +278,29 @@ def _extract_chapter_plan(result) -> ChapterPlan:
         chapters = result.get("chapters", [])
         return ChapterPlan(chapters=[Chapter(**c) if isinstance(c, dict) else c for c in chapters])
     return ChapterPlan(chapters=[])
+
+
+# ##################################################################
+# extract section result
+# unwrap a SectionResult (live object or restored-from-json dict) to (text, facts)
+def _extract_section_result(result):
+    from models import Fact
+    if hasattr(result, "text"):
+        text = result.text
+        raw_facts = result.new_facts
+    elif isinstance(result, dict):
+        text = result.get("text", "")
+        raw_facts = result.get("new_facts", [])
+    else:
+        return str(result), []
+
+    facts = []
+    for entry in raw_facts:
+        if isinstance(entry, Fact):
+            facts.append(entry)
+        elif isinstance(entry, dict):
+            facts.append(Fact(**entry))
+    return text, facts
 
 
 # ##################################################################

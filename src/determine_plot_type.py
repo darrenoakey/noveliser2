@@ -1,4 +1,4 @@
-from brain import chat_structured, OPUS_MODEL
+from brain import chat_structured
 from models import PlotType
 
 
@@ -10,4 +10,4 @@ def determine_plot_type(description: str) -> PlotType:
         {"role": "system", "content": "You are a literary analyst specializing in Christopher Booker's Seven Basic Plots. You identify which archetype best fits a given story."},
         {"role": "user", "content": f"Analyze this story description and determine which of the 7 basic plots it best fits:\n\n{description}"},
     ]
-    return chat_structured(messages, PlotType, model=OPUS_MODEL)
+    return chat_structured(messages, PlotType)

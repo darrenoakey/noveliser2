@@ -1,4 +1,4 @@
-from brain import chat, OPUS_MODEL
+from brain import chat
 from models import EnhancedOutline
 
 
@@ -26,7 +26,7 @@ HUMOR ELEMENTS:
 ROMANCE ELEMENTS:
 - (each romance element on its own line)"""},
     ]
-    result_text = chat(messages, model=OPUS_MODEL)
+    result_text = chat(messages)
 
     outline_text = result_text
     humor_elements = []

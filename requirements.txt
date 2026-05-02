@@ -1,4 +1,4 @@
-claude-agent-sdk
+daz-agent-sdk
 colorama
 pydantic
 pillow

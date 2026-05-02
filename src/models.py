@@ -163,11 +163,38 @@ class SectionPlan(BaseModel):
 
 
 # ##################################################################
+# fact
+# a single canonical fact about a subject in the story
+class Fact(BaseModel):
+    subject: str = Field(description="The entity the fact is about (character, place, object) - use the canonical name")
+    attribute: str = Field(description="Short snake_case attribute name (e.g. 'breed', 'eye_color', 'occupation', 'location')")
+    value: str = Field(description="The value of the attribute, kept short (e.g. 'golden retriever', 'blue', 'doctor')")
+    first_seen: str = Field(default="", description="Where this fact was first established, e.g. 'ch1.s2'")
+
+
+# ##################################################################
+# contradiction
+# a statement in newly written prose that conflicts with an established fact
+class Contradiction(BaseModel):
+    existing: Fact = Field(description="The previously established fact that the new prose contradicts")
+    new_value: str = Field(description="The conflicting value from the new prose")
+    quote: str = Field(description="A verbatim short quote from the new prose that introduced the contradiction")
+
+
+# ##################################################################
+# fact delta
+# the result of analyzing a newly written section against the existing ledger
+class FactDelta(BaseModel):
+    new_facts: list[Fact] = Field(default_factory=list, description="Facts established for the first time in this section")
+    contradictions: list[Contradiction] = Field(default_factory=list, description="Statements in this section that contradict established facts")
+
+
+# ##################################################################
 # section result
 # the generated prose and extracted facts from writing a section
 class SectionResult(BaseModel):
     text: str = Field(description="The narrative text")
-    new_facts: list[str] = Field(description="New facts established in this section")
+    new_facts: list[Fact] = Field(default_factory=list, description="New canonical facts established in this section")
 
 
 # ##################################################################

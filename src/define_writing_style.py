@@ -1,4 +1,4 @@
-from brain import chat_structured, OPUS_MODEL
+from brain import chat_structured
 from models import WritingStyle
 
 
@@ -21,4 +21,4 @@ Provide specific guidance on:
 - Pacing (e.g., fast-paced, measured, varies by section)
 - 2-3 example sentences showing the style"""},
     ]
-    return chat_structured(messages, WritingStyle, model=OPUS_MODEL)
+    return chat_structured(messages, WritingStyle)

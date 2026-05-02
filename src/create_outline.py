@@ -1,4 +1,4 @@
-from brain import chat, OPUS_MODEL
+from brain import chat
 from models import Character
 
 
@@ -36,6 +36,12 @@ CRITICAL: This outline must contain a complete story arc with:
 - Satisfying resolution that ties up all plot threads
 - All major plot points, character development, and thematic elements must fit within {num_chapters} chapters
 
-The story should feel complete and satisfying at this length, not like a fragment or the beginning of a longer work."""},
+Return a compact planning outline only:
+- 3 acts
+- 2-4 bullet points per act
+- one short paragraph on Darren's emotional journey
+- one short paragraph on Brett and Chris's role in the business/story
+
+Keep the whole response under 1200 words. The story should feel complete and satisfying at this length, not like a fragment or the beginning of a longer work."""},
     ]
-    return chat(messages, model=OPUS_MODEL)
+    return chat(messages, max_tokens=1536)

@@ -1,4 +1,4 @@
-from brain import chat_structured, OPUS_MODEL
+from brain import chat_structured
 from models import Chapter, SectionPlan
 
 
@@ -47,7 +47,7 @@ Each section should be approximately 1500-2000 words when written.
 CRITICAL: Create exactly {sections_per_chapter} sections."""},
         ]
 
-    result = chat_structured(messages, SectionPlan, model=OPUS_MODEL)
+    result = chat_structured(messages, SectionPlan)
 
     if len(result.sections) != sections_per_chapter:
         raise ValueError(f"Requested {sections_per_chapter} sections, got {len(result.sections)}")

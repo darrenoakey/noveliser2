@@ -1,4 +1,4 @@
-from brain import chat_structured, OPUS_MODEL
+from brain import chat_structured
 from models import CharactersList
 
 
@@ -26,4 +26,4 @@ Themes: {theme_text}
 
 Create characters with full biographies and personality traits.{character_instruction}"""},
     ]
-    return chat_structured(messages, CharactersList, model=OPUS_MODEL)
+    return chat_structured(messages, CharactersList)

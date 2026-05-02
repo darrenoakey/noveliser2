@@ -1,4 +1,4 @@
-from brain import chat_structured, OPUS_MODEL
+from brain import chat_structured
 from models import ChapterPlan, Character, EnhancedOutline
 
 
@@ -49,7 +49,7 @@ CRITICAL REQUIREMENTS:
 
 Create exactly {num_chapters} chapters."""},
     ]
-    result = chat_structured(messages, ChapterPlan, model=OPUS_MODEL)
+    result = chat_structured(messages, ChapterPlan)
 
     if len(result.chapters) != num_chapters:
         raise ValueError(f"Requested {num_chapters} chapters, got {len(result.chapters)}")
