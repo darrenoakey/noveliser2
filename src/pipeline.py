@@ -5,7 +5,7 @@ from colorama import Fore, Style
 
 from models import (
     BookMetadata, BookStatus, Character, Chapter, ChapterPlan,
-    EnhancedOutline, WritingStyle,
+    EnhancedOutline, Title, WritingStyle,
 )
 from fact_ledger import FactLedger
 from record import record, reset_novel_dir, set_continue_mode, set_novel_dir, resolve_novel_dir
@@ -30,7 +30,7 @@ from backend import skip_images
 # execute the full novel generation pipeline from description to epub
 def write_novel(description: str, output_dir: Path, num_chapters: int = 10,
                 sections_per_chapter: int = 10, author: str = "Darren Oakey",
-                continue_novel_dir: Path | None = None) -> Path:
+                continue_novel_dir: Path | None = None, title: str | None = None) -> Path:
 
     if continue_novel_dir:
         set_continue_mode(True)
@@ -50,8 +50,9 @@ def write_novel(description: str, output_dir: Path, num_chapters: int = 10,
     print(f"{Fore.CYAN}Starting novel generation...{Style.RESET_ALL}")
     print(f"{Fore.CYAN}{'=' * 60}{Style.RESET_ALL}")
 
-    # step 1: generate title
-    title_result = record("Generate a title", lambda: generate_title(description),
+    # step 1: title — use the caller-supplied title verbatim, else generate one
+    title_result = record("Generate a title",
+                          lambda: Title(title=title) if title else generate_title(description),
                           novel_dir or output_dir / "novel_in_progress")
 
     title_str = title_result.title if hasattr(title_result, "title") else title_result.get("title", str(title_result))
