@@ -1,21 +1,24 @@
-from brain import chat, chat_structured
-from fact_ledger import FactLedger
 from models import (
     Chapter,
     ChapterPlan,
-    Contradiction,
-    FactDelta,
+    Character,
     Section,
     SectionResult,
     WritingStyle,
 )
+from retrieval_memory import RetrievalMemory
 
-MAX_CONTRADICTION_RETRIES = 2
+from brain import chat
+from craft import PROSE_CRAFT, render_character_engine
+
+# how many prior sentences to retrieve as "established details" for a section
+RETRIEVAL_K = 12
 
 
 def write_section(chapter: Chapter, section: Section, previous_text: str,
-                  ledger: FactLedger, writing_style: WritingStyle,
-                  chapter_plan: ChapterPlan, is_final_section: bool) -> SectionResult:
+                  memory: RetrievalMemory, characters: list[Character],
+                  writing_style: WritingStyle, chapter_plan: ChapterPlan,
+                  is_final_section: bool) -> SectionResult:
     is_first = chapter.number == 1 and section.number == 1
     section_id = f"ch{chapter.number}.s{section.number}"
 
@@ -35,38 +38,70 @@ def write_section(chapter: Chapter, section: Section, previous_text: str,
         chars_to_include = min(len(previous_text), 8000)
         previous_context = f"\n\nTEXT SO FAR (last {chars_to_include} characters - continue from here):\n\n{previous_text[-chars_to_include:]}"
 
-    canon_block = ledger.render_for_prompt()
-    contradiction_directive = ""
+    character_block = _render_characters(characters)
+    engine_block = render_character_engine(characters)
+    scene_directive = _render_scene_directive(section)
 
-    section_text = ""
-    last_contradictions: list[Contradiction] = []
+    # retrieve the most relevant established details from everything written so
+    # far (excluding this section if it is being rewritten on resume).
+    query = f"{section.goal}\n{section.key_events}\n" + ", ".join(c.name for c in characters)
+    established = memory.retrieve(query, k=RETRIEVAL_K, exclude_section=section_id)
+    established_block = _render_established(established)
 
-    for _ in range(MAX_CONTRADICTION_RETRIES + 1):
-        section_text = _generate_prose(
-            chapter, section, writing_style, all_chapters_summary,
-            position_note, previous_context, canon_block, contradiction_directive,
+    section_text = _generate_prose(
+        chapter, section, writing_style, all_chapters_summary,
+        position_note, previous_context, character_block, engine_block,
+        scene_directive, established_block,
+    )
+    section_text = _clean_narrative(section_text)
+
+    return SectionResult(text=section_text, new_facts=[])
+
+
+def _render_scene_directive(section: Section) -> str:
+    stype = (section.scene_type or "scene").strip().lower()
+    if stype == "sequel":
+        body = (
+            "This is a SEQUEL (reactive). Move through the POV character's emotional REACTION "
+            "to the previous setback, a DILEMMA of bad options, and a DECISION that commits them "
+            "to a new goal."
         )
-        section_text = _clean_narrative(section_text)
+    else:
+        body = (
+            "This is a SCENE (proactive). The POV character pursues a concrete GOAL, meets "
+            "escalating CONFLICT, and ends on a DISASTER that leaves them worse off."
+        )
+    if section.disaster:
+        body += f" The turn this section builds toward: {section.disaster}"
+    return f"\n\nSECTION DRAMATIC SHAPE: {body}\n"
 
-        delta = _extract_delta(section_text, ledger, section_id)
-        last_contradictions = delta.contradictions
 
-        if not last_contradictions:
-            added = ledger.add_all(delta.new_facts)
-            return SectionResult(text=section_text, new_facts=added)
+def _render_characters(characters: list[Character]) -> str:
+    if not characters:
+        return "(none defined)"
+    lines = []
+    for c in characters:
+        traits = ", ".join(c.traits) if c.traits else ""
+        trait_part = f" — {traits}" if traits else ""
+        lines.append(f"- {c.name} ({c.role.value if hasattr(c.role, 'value') else c.role}): {c.biography}{trait_part}")
+    return "\n".join(lines)
 
-        contradiction_directive = _build_contradiction_directive(last_contradictions)
 
-    raise ValueError(
-        f"Section {section_id} could not be written without contradicting established canon "
-        f"after {MAX_CONTRADICTION_RETRIES + 1} attempts. Contradictions: "
-        + "; ".join(_format_contradiction(c) for c in last_contradictions)
+def _render_established(sentences: list[str]) -> str:
+    if not sentences:
+        return ""
+    bullets = "\n".join(f"- {s}" for s in sentences)
+    return (
+        "\n\nESTABLISHED DETAILS (drawn from earlier in this same novel — keep your prose "
+        "consistent with these; do not contradict them):\n"
+        f"{bullets}\n"
     )
 
 
 def _generate_prose(chapter: Chapter, section: Section, writing_style: WritingStyle,
                     all_chapters_summary: str, position_note: str, previous_context: str,
-                    canon_block: str, contradiction_directive: str) -> str:
+                    character_block: str, engine_block: str, scene_directive: str,
+                    established_block: str) -> str:
     system_content = f"""You are a novelist writing prose fiction. You output ONLY narrative text - no commentary, no meta-discussion, no preamble, no "I'll write..." statements. Just the story itself.
 
 Writing Style: {writing_style.style_description}
@@ -79,8 +114,10 @@ NOVEL STRUCTURE:
 
 {position_note}
 
-ESTABLISHED CANON (these facts are TRUE and IMMUTABLE - your prose MUST be consistent with them; never contradict any value below):
-{canon_block}
+CAST (use these exact names and keep each character consistent with their description):
+{character_block}{engine_block}
+
+{PROSE_CRAFT}
 
 CRITICAL: Output ONLY the narrative prose. No introductions, no explanations, no section headers. Start immediately with the story text."""
 
@@ -91,11 +128,11 @@ Chapter Closing: {chapter.closing_situation}
 
 SECTION: {section.number}
 Section Goal: {section.goal}
-Key Events: {section.key_events}
-{contradiction_directive}{previous_context}
+Key Events: {section.key_events}{scene_directive}{established_block}{previous_context}
 
 Write approximately 1500-2000 words of narrative prose for this section.
-Maintain continuity with the established canon and previous text.
+Maintain continuity with the cast, the established details, and the previous text.
+Apply the craft rules above: microtension, show-don't-name, subjective description, sentence-length pacing, and cut the listed prose pitfalls.
 Output ONLY the story text. No headers, no commentary, no meta-text. Begin the narrative immediately."""
 
     messages = [
@@ -103,100 +140,6 @@ Output ONLY the story text. No headers, no commentary, no meta-text. Begin the n
         {"role": "user", "content": user_content},
     ]
     return chat(messages, max_tokens=2400)
-
-
-def _extract_delta(section_text: str, ledger: FactLedger, section_id: str) -> FactDelta:
-    canon_block = ledger.render_for_prompt()
-    known = ledger.known_subjects()
-    if known:
-        known_subjects_block = (
-            "KNOWN SUBJECTS (use these EXACT names if the passage refers to them; "
-            "do NOT introduce a near-duplicate like 'Clara Whitty' when 'Clara Whitby' is already known):\n  - "
-            + "\n  - ".join(known)
-        )
-    else:
-        known_subjects_block = "KNOWN SUBJECTS: (none yet)"
-
-    messages = [
-        {"role": "system", "content": (
-            "You are a continuity editor. You compare a newly written passage of a novel against an established canon "
-            "of facts and report two things:\n"
-            "  1. NEW canonical facts established by the passage (subject + attribute + short value).\n"
-            "  2. CONTRADICTIONS: places where the passage states a value for a subject's attribute that conflicts "
-            "with the established canon.\n\n"
-            "Rules:\n"
-            "- Use snake_case attribute names like 'breed', 'eye_color', 'hair_color', 'occupation', 'location', "
-            "'age', 'owner'.\n"
-            "- Keep values short (a phrase, not a sentence).\n"
-            "- For subjects, ALWAYS use the canonical name from the KNOWN SUBJECTS list when the passage refers to "
-            "the same entity. Do not invent variants or near-duplicates.\n"
-            "- Do NOT emit trivial name facts: never set attribute='first_name'/'last_name'/'name'/'full_name' when "
-            "the value is already part of the subject (e.g. subject='Clara Whitby', attribute='first_name', "
-            "value='Clara' is FORBIDDEN — skip it).\n"
-            "- Treat semantically equivalent values as equal (e.g. 'golden retriever' == 'Golden Retriever'). "
-            "Only flag a contradiction when the values genuinely conflict.\n"
-            "- Restating an existing canon fact is NOT a new fact and NOT a contradiction.\n"
-            "- Subjective descriptions, atmosphere, and emotions are NOT facts. Only durable physical / "
-            "biographical / relational attributes count.\n"
-            "- For each contradiction, include a short verbatim quote from the passage."
-        )},
-        {"role": "user", "content": f"""{known_subjects_block}
-
-ESTABLISHED CANON:
-{canon_block}
-
-PASSAGE (section {section_id}):
-{section_text}
-
-Return your analysis as structured JSON."""},
-    ]
-
-    delta = chat_structured(messages, FactDelta)
-    if not isinstance(delta, FactDelta):
-        delta = FactDelta(**delta.model_dump())  # type: ignore[arg-type]
-
-    canonicalized_new = []
-    for fact in delta.new_facts:
-        canonical = ledger.canonical_subject(fact.subject)
-        if canonical and canonical != fact.subject:
-            fact = fact.model_copy(update={"subject": canonical})
-        if not fact.first_seen:
-            fact.first_seen = section_id
-        canonicalized_new.append(fact)
-    delta.new_facts = canonicalized_new
-
-    delta.contradictions = _verify_contradictions(delta.contradictions, ledger)
-    return delta
-
-
-def _verify_contradictions(reported: list[Contradiction], ledger: FactLedger) -> list[Contradiction]:
-    verified = []
-    for contra in reported:
-        canonical_subject = ledger.canonical_subject(contra.existing.subject) or contra.existing.subject
-        existing = ledger.get(canonical_subject, contra.existing.attribute)
-        if existing is None:
-            continue
-        if existing.value.strip().lower() == contra.new_value.strip().lower():
-            continue
-        verified.append(Contradiction(existing=existing, new_value=contra.new_value, quote=contra.quote))
-    return verified
-
-
-def _build_contradiction_directive(contradictions: list[Contradiction]) -> str:
-    bullets = "\n".join(f"  - {_format_contradiction(c)}" for c in contradictions)
-    return (
-        "\n\nCANON VIOLATIONS IN YOUR PREVIOUS DRAFT - YOU MUST FIX THESE. "
-        "Rewrite the section so the prose is consistent with the established canon:\n"
-        f"{bullets}\n"
-    )
-
-
-def _format_contradiction(c: Contradiction) -> str:
-    quote = f' (you wrote: "{c.quote}")' if c.quote else ""
-    return (
-        f"{c.existing.subject}.{c.existing.attribute} is '{c.existing.value}', "
-        f"NOT '{c.new_value}'{quote}"
-    )
 
 
 def _clean_narrative(text: str) -> str:

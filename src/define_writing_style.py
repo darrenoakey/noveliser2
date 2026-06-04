@@ -1,4 +1,5 @@
 from brain import chat_structured
+from craft import STYLE_INSTRUCTION
 from models import WritingStyle
 
 
@@ -13,6 +14,8 @@ def define_writing_style(outline: str, themes: list[str]) -> WritingStyle:
 Themes: {', '.join(themes)}
 Story outline:
 {outline}
+
+{STYLE_INSTRUCTION}
 
 Provide specific guidance on:
 - Overall style description

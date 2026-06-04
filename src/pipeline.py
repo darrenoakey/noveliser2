@@ -7,7 +7,7 @@ from models import (
     BookMetadata, BookStatus, Character, Chapter, ChapterPlan,
     EnhancedOutline, Title, WritingStyle,
 )
-from fact_ledger import FactLedger
+from retrieval_memory import RetrievalMemory
 from record import record, reset_novel_dir, set_continue_mode, set_novel_dir, resolve_novel_dir
 from metadata import write_metadata, read_metadata, mark_book_finished
 from generate_title import generate_title
@@ -125,8 +125,8 @@ def write_novel(description: str, output_dir: Path, num_chapters: int = 10,
 
     # step 10: write all sections
     all_text = ""
-    ledger_path = novel_dir / "fact_ledger.json"
-    ledger = FactLedger.load(ledger_path)
+    memory_path = novel_dir / "retrieval_memory.json"
+    memory = RetrievalMemory.load(memory_path)
     content_by_chapter = {}
     chapter_images = {}
 
@@ -160,16 +160,18 @@ def write_novel(description: str, output_dir: Path, num_chapters: int = 10,
 
             section_result = record(
                 f"Write chapter {chapter.number} section {section.number}",
-                lambda ch=chapter, sec=section, txt=all_text, lg=ledger: write_section(
-                    ch, sec, txt, lg, writing_style, chapter_plan, is_final
+                lambda ch=chapter, sec=section, txt=all_text, mem=memory: write_section(
+                    ch, sec, txt, mem, characters, writing_style, chapter_plan, is_final
                 ),
                 novel_dir,
             )
 
-            section_text, replayed_facts = _extract_section_result(section_result)
-            if replayed_facts:
-                ledger.add_all(replayed_facts)
-            ledger.save(ledger_path)
+            section_text, _ = _extract_section_result(section_result)
+            # embed this section into the retrieval memory (idempotent — on resume
+            # a cached section is embedded here so later sections can retrieve it).
+            section_id = f"ch{chapter.number}.s{section.number}"
+            memory.ensure_section(section_id, section_text)
+            memory.save(memory_path)
             all_text += "\n\n" + section_text
             content_by_chapter[chapter.number][section.number] = section_text
 

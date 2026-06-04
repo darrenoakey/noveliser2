@@ -1,4 +1,5 @@
 from brain import chat
+from craft import STRUCTURE_INSTRUCTION
 from models import Character
 
 
@@ -30,6 +31,8 @@ Characters:
 
 SCOPE: {scope}
 
+{STRUCTURE_INSTRUCTION}
+
 CRITICAL: This outline must contain a complete story arc with:
 - Clear beginning that establishes setting, characters, and conflict
 - Well-developed middle that explores the conflict and develops characters
@@ -37,10 +40,10 @@ CRITICAL: This outline must contain a complete story arc with:
 - All major plot points, character development, and thematic elements must fit within {num_chapters} chapters
 
 Return a compact planning outline only:
-- 3 acts
-- 2-4 bullet points per act
-- one short paragraph on Darren's emotional journey
-- one short paragraph on Brett and Chris's role in the business/story
+- 3 acts, mapped to the pacing beats above (inciting incident, plot point one, midpoint, plot point two, climax)
+- 2-4 bullet points per act, each connected to the next by "therefore" or "but"
+- one short paragraph on the protagonist's emotional journey (their Lie giving way to their Need)
+- one short paragraph on how the key supporting characters pressure that arc
 
 Keep the whole response under 1200 words. The story should feel complete and satisfying at this length, not like a fragment or the beginning of a longer work."""},
     ]

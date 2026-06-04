@@ -1,4 +1,5 @@
 from brain import chat_structured
+from craft import SCENE_SEQUEL_INSTRUCTION
 from models import Chapter, SectionPlan
 
 
@@ -43,6 +44,8 @@ KEY EVENTS: {', '.join(chapter.key_events)}
 
 Create exactly {sections_per_chapter} sections that progress from the opening to the closing situation.
 Each section should be approximately 1500-2000 words when written.
+
+{SCENE_SEQUEL_INSTRUCTION}
 
 CRITICAL: Create exactly {sections_per_chapter} sections."""},
         ]

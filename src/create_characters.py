@@ -1,4 +1,5 @@
 from brain import chat_structured
+from craft import CHARACTER_ENGINE_INSTRUCTION
 from models import CharactersList
 
 
@@ -24,6 +25,8 @@ Description: {description}
 Plot Type: {plot_type}
 Themes: {theme_text}
 
-Create characters with full biographies and personality traits.{character_instruction}"""},
+Create characters with full biographies and personality traits.
+
+{CHARACTER_ENGINE_INSTRUCTION}{character_instruction}"""},
     ]
     return chat_structured(messages, CharactersList)

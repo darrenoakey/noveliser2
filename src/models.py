@@ -98,6 +98,11 @@ class Character(BaseModel):
     biography: str = Field(description="Character backstory and description")
     role: CharacterRole = Field(description="Role in the story")
     traits: list[str] = Field(description="Personality traits")
+    wound: str = Field(default="", description="Defining past pain (betrayal/abandonment/humiliation) that taught them the world is dangerous")
+    lie: str = Field(default="", description="One-sentence false belief built to survive the wound")
+    want: str = Field(default="", description="Concrete external goal they pursue in the plot")
+    need: str = Field(default="", description="Internal truth they must accept to become whole (often the opposite of the Lie)")
+    arc: str = Field(default="", description="Arc type: positive change, flat, disillusionment, or corruption")
 
 
 # ##################################################################
@@ -153,6 +158,8 @@ class Section(BaseModel):
     number: int = Field(description="Section number within the chapter")
     goal: str = Field(description="What this section accomplishes")
     key_events: str = Field(description="Specific events and story beats")
+    scene_type: str = Field(default="scene", description="'scene' (proactive: goal/conflict/disaster) or 'sequel' (reactive: reaction/dilemma/decision)")
+    disaster: str = Field(default="", description="The setback that ends a scene, or the hard decision/new risk that ends a sequel")
 
 
 # ##################################################################
@@ -173,28 +180,13 @@ class Fact(BaseModel):
 
 
 # ##################################################################
-# contradiction
-# a statement in newly written prose that conflicts with an established fact
-class Contradiction(BaseModel):
-    existing: Fact = Field(description="The previously established fact that the new prose contradicts")
-    new_value: str = Field(description="The conflicting value from the new prose")
-    quote: str = Field(description="A verbatim short quote from the new prose that introduced the contradiction")
-
-
-# ##################################################################
-# fact delta
-# the result of analyzing a newly written section against the existing ledger
-class FactDelta(BaseModel):
-    new_facts: list[Fact] = Field(default_factory=list, description="Facts established for the first time in this section")
-    contradictions: list[Contradiction] = Field(default_factory=list, description="Statements in this section that contradict established facts")
-
-
-# ##################################################################
 # section result
-# the generated prose and extracted facts from writing a section
+# the generated prose for a section. new_facts is retained for backward
+# compatibility with checkpoint files written by the old fact-ledger pipeline;
+# the current retrieval-memory pipeline leaves it empty.
 class SectionResult(BaseModel):
     text: str = Field(description="The narrative text")
-    new_facts: list[Fact] = Field(default_factory=list, description="New canonical facts established in this section")
+    new_facts: list[Fact] = Field(default_factory=list, description="(legacy) facts established in this section; unused by the retrieval-memory pipeline")
 
 
 # ##################################################################

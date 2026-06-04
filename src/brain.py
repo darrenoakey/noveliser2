@@ -50,8 +50,8 @@ def _split_messages(messages: list[dict[str, str]]) -> tuple[str, str]:
     return "\n\n".join(system_parts), "\n\n".join(user_parts)
 
 
-def chat(messages: list[dict[str, str]], max_tokens: int = 4096) -> str:
-    selector = f"tier:{TIER.value}"
+def chat(messages: list[dict[str, str]], max_tokens: int = 4096, tier: Tier = TIER) -> str:
+    selector = f"tier:{tier.value}"
     hash_key = _hash_input(messages, selector, extra=f"max_tokens:{max_tokens}")
     cached = _load_from_cache(hash_key)
     if cached:
@@ -60,20 +60,20 @@ def chat(messages: list[dict[str, str]], max_tokens: int = 4096) -> str:
     system_prompt, user_prompt = _split_messages(messages)
 
     async def _run() -> str:
-        response = await agent.ask(user_prompt, tier=TIER, system=system_prompt or None)
+        response = await agent.ask(user_prompt, tier=tier, system=system_prompt or None)
         return response.text
 
     result = asyncio.run(_run())
     if not result:
         raise ValueError("Agent returned empty response")
 
-    cache_inputs = {"messages": messages, "tier": TIER.value, "max_tokens": max_tokens}
+    cache_inputs = {"messages": messages, "tier": tier.value, "max_tokens": max_tokens}
     _save_to_cache(hash_key, cache_inputs, result)
     return result
 
 
-def chat_structured(messages: list[dict[str, str]], model_class: Type[BaseModel]) -> BaseModel:
-    selector = f"tier:{TIER.value}"
+def chat_structured(messages: list[dict[str, str]], model_class: Type[BaseModel], tier: Tier = TIER) -> BaseModel:
+    selector = f"tier:{tier.value}"
     hash_key = _hash_input(messages, selector, extra=model_class.__name__)
     cached = _load_from_cache(hash_key)
     if cached:
@@ -84,7 +84,7 @@ def chat_structured(messages: list[dict[str, str]], model_class: Type[BaseModel]
     async def _run() -> BaseModel:
         response = await agent.ask(
             user_prompt,
-            tier=TIER,
+            tier=tier,
             system=system_prompt or None,
             schema=model_class,
         )
@@ -94,7 +94,7 @@ def chat_structured(messages: list[dict[str, str]], model_class: Type[BaseModel]
     if result is None:
         raise ValueError("Agent returned empty response")
 
-    cache_inputs = {"messages": messages, "tier": TIER.value, "model_class": model_class.__name__}
+    cache_inputs = {"messages": messages, "tier": tier.value, "model_class": model_class.__name__}
     _save_to_cache(hash_key, cache_inputs, result.model_dump())
     return result
 
