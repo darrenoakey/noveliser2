@@ -22,11 +22,14 @@ def generate_cover(title: str, author: str, novel_dir: Path, themes: list[str] |
     plot_context = f"This is a {plot_type.lower()} story. " if plot_type else ""
 
     prompt = (
-        f"Professional book cover artwork. {theme_context}{plot_context}"
-        f"Atmospheric scene capturing the essence of a story titled '{title}'. "
+        f"Professional, commercial book cover for a novel. {theme_context}{plot_context}"
+        f"Atmospheric scene capturing the essence of the story. "
         f"Rich colors, compelling visual design, dramatic lighting. "
-        f"No text, no words, no letters, no writing of any kind. "
-        f"Not a picture of a book. Pure artwork suitable for a book cover."
+        f'Render the title text exactly as "{title}" in large, bold, highly legible '
+        f"professional cover typography across the upper portion of the cover, and the "
+        f'author credit exactly as "{author}" in smaller legible text near the bottom. '
+        f"Spell the title and author name letter-for-letter correct, with clean kerning, "
+        f"the lettering integrated tastefully into the artwork. Portrait book-cover composition."
     )
 
     cover_path = novel_dir / "cover.jpg"
