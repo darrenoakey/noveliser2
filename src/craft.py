@@ -64,33 +64,39 @@ the final section forces a single dangerous path."""
 # writing style — microtension and pacing philosophy
 # injected into style definition.
 STYLE_INSTRUCTION = """\
-The style must be built for microtension — moment-by-moment suspense from
-conflicting emotions, not just plot threat. Specify a voice where dialogue is
-compressed and subtextual (characters rarely say what they mean), description is
-strictly subjective (only what the POV character notices under their current
-emotional state), and sentence length flexes with tension: short, staccato
-fragments for action; long, clause-heavy sentences for dread and reflection."""
+The style must read as smooth, flowing literary prose — well-formed, varied
+sentences in real paragraphs, the kind a reader sinks into. Build in microtension
+(moment-by-moment suspense from conflicting emotions, not just plot threat),
+subtextual dialogue (characters rarely say exactly what they mean), and subjective
+description (what the POV character notices given their current emotional state).
+Sentence length should VARY naturally with the moment — most prose is fluid and
+grammatically complete; clipped short sentences are an occasional accent for a
+peak beat, NOT the default. Do not specify a telegraphic, fragmented, or
+sentence-fragment-heavy voice."""
 
 
 # ##################################################################
 # prose crucible — the line-level rules, injected into the prose prompt.
 PROSE_CRAFT = """\
 CRAFT RULES — write "unputdownable" prose:
+- FLOW FIRST: write smooth, immersive literary prose in full, grammatically
+  complete sentences and proper paragraphs. This is the default register. Do NOT
+  write in clipped fragments, telegraphic bursts, or one-line-per-thought staccato
+  as a mannerism — that reads as broken and bizarre.
 - MICROTENSION: keep moment-to-moment suspense alive through conflicting emotions
-  inside the POV character, not just external threat. Every page should make the
-  reader uneasy about the next few seconds.
+  inside the POV character, not just external threat.
 - SHOW, DON'T NAME: never name an emotion ("she felt terrified"). Reconstruct the
   concrete sensory triggers so the reader feels it.
-- SUBJECTIVE DESCRIPTION: describe only what the POV character would notice under
-  their current emotional duress — never a neutral catalogue.
-- DIALOGUE: compressed and subtextual; characters rarely say what they mean; words
-  carry an undercurrent battle for control or safety.
+- SUBJECTIVE DESCRIPTION: describe what the POV character would notice given their
+  current emotional state — never a neutral catalogue.
+- DIALOGUE: natural and characterful, but layered with subtext; characters rarely
+  say exactly what they mean. Let real conversations breathe.
 - SURPRISINGNESS: juxtapose contrasting emotions (laughter through tears) for
   composite, lingering feeling.
-- PACING: short, staccato sentences and fragments for action and threat; long,
-  clause-heavy sentences for reflection and dread. Vary sentence length.
-- PRESSURE: keep a ticking clock (a literal or figurative deadline) present, and
-  let the character's options narrow toward a single dangerous choice.
+- RHYTHM: VARY sentence length. Most sentences flow at a natural, readable length;
+  reserve a short punchy sentence for an occasional peak beat. Variety, not
+  fragmentation.
+- PRESSURE: keep a quiet ticking clock (a literal or figurative deadline) present.
 - CUT THESE: passive voice; qualifiers (very, quite, little, pretty); adverb+weak
   verb pairs (use one precise verb); the word "suddenly"; dummy "there was…";
   "-ing" participle pile-ups; bloated flashbacks; pages of introspection."""

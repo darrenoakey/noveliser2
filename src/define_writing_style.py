@@ -6,7 +6,13 @@ from models import WritingStyle
 # ##################################################################
 # define writing style
 # establish a consistent narrative voice and style for the novel
-def define_writing_style(outline: str, themes: list[str]) -> WritingStyle:
+def define_writing_style(outline: str, themes: list[str], style_directive: str | None = None) -> WritingStyle:
+    directive_block = ""
+    if style_directive:
+        directive_block = (
+            f"\nAUTHOR'S STYLE DIRECTIVE (honor this above all — it defines the desired voice "
+            f"and reading experience):\n{style_directive}\n"
+        )
     messages = [
         {"role": "system", "content": "You are a writing style consultant who defines clear, consistent narrative voices for novels."},
         {"role": "user", "content": f"""Define a consistent writing style for this novel:
@@ -14,7 +20,7 @@ def define_writing_style(outline: str, themes: list[str]) -> WritingStyle:
 Themes: {', '.join(themes)}
 Story outline:
 {outline}
-
+{directive_block}
 {STYLE_INSTRUCTION}
 
 Provide specific guidance on:

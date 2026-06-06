@@ -30,7 +30,8 @@ from backend import skip_images
 # execute the full novel generation pipeline from description to epub
 def write_novel(description: str, output_dir: Path, num_chapters: int = 10,
                 sections_per_chapter: int = 10, author: str = "Darren Oakey",
-                continue_novel_dir: Path | None = None, title: str | None = None) -> Path:
+                continue_novel_dir: Path | None = None, title: str | None = None,
+                style_directive: str | None = None) -> Path:
 
     if continue_novel_dir:
         set_continue_mode(True)
@@ -104,7 +105,7 @@ def write_novel(description: str, output_dir: Path, num_chapters: int = 10,
 
     # step 7: define writing style
     writing_style_result = record("Define writing style",
-                                  lambda: define_writing_style(enhanced.outline, theme_values), novel_dir)
+                                  lambda: define_writing_style(enhanced.outline, theme_values, style_directive), novel_dir)
     writing_style = _extract_writing_style(writing_style_result)
 
     # step 8: break into chapters
