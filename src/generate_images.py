@@ -38,6 +38,16 @@ def generate_cover(title: str, author: str, novel_dir: Path, themes: list[str] |
 
 
 # ##################################################################
+# use cover image
+# adopt a caller-supplied image as the book cover instead of generating one
+def use_cover_image(source: Path, novel_dir: Path) -> Path:
+    cover_path = novel_dir / "cover.jpg"
+    with Image.open(source) as img:
+        img.convert("RGB").save(cover_path, format="JPEG", quality=95)
+    return cover_path
+
+
+# ##################################################################
 # generate chapter image
 # create a header illustration for a single chapter
 def generate_chapter_image(chapter_title: str, chapter_goal: str, novel_dir: Path,

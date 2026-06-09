@@ -55,6 +55,7 @@ def command_create(args: argparse.Namespace) -> int:
             author=args.author,
             title=args.title,
             style_directive=args.style,
+            cover_image=Path(args.cover).expanduser() if args.cover else None,
         )
         return 0
     except KeyboardInterrupt:
@@ -232,6 +233,7 @@ def main(argv: list[str]) -> int:
     p_create.add_argument("description", help="Novel description")
     p_create.add_argument("--title", default=None, help="Force an exact title (default: LLM-generated from description)")
     p_create.add_argument("--style", default=None, help="Author's style directive (e.g. 'warm, flowing, dialogue-driven prose')")
+    p_create.add_argument("--cover", default=None, help="Path to an existing image to use as the cover (skips cover generation)")
     p_create.add_argument("--chapters", type=int, default=10, help="Number of chapters (default: 10)")
     p_create.add_argument("--sections", type=int, default=10, help="Sections per chapter (default: 10)")
     p_create.add_argument("--author", default="Darren Oakey", help="Author name")

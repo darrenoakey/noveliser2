@@ -20,7 +20,7 @@ from define_writing_style import define_writing_style
 from break_into_chapters import break_into_chapters
 from break_into_sections import break_into_sections
 from write_section import write_section
-from generate_images import generate_cover, generate_chapter_image
+from generate_images import generate_cover, generate_chapter_image, use_cover_image
 from epub_generator import create_epub
 from backend import skip_images
 
@@ -31,7 +31,8 @@ from backend import skip_images
 def write_novel(description: str, output_dir: Path, num_chapters: int = 10,
                 sections_per_chapter: int = 10, author: str = "Darren Oakey",
                 continue_novel_dir: Path | None = None, title: str | None = None,
-                style_directive: str | None = None) -> Path:
+                style_directive: str | None = None,
+                cover_image: Path | None = None) -> Path:
 
     if continue_novel_dir:
         set_continue_mode(True)
@@ -114,15 +115,18 @@ def write_novel(description: str, output_dir: Path, num_chapters: int = 10,
                                                              plot_type_str, num_chapters), novel_dir)
     chapter_plan = _extract_chapter_plan(chapter_plan_result)
 
-    # step 9: generate cover image
+    # step 9: cover image — adopt caller-supplied artwork verbatim, else generate
     cover_path = novel_dir / "cover.jpg"
-    if not skip_images():
+    if cover_image:
+        cover_path = record("Generate cover image",
+                            lambda: use_cover_image(Path(cover_image), novel_dir), novel_dir)
+    elif not skip_images():
         cover_path = record("Generate cover image",
                             lambda: generate_cover(title_str, author, novel_dir, theme_values, plot_type_str), novel_dir)
-        if isinstance(cover_path, dict):
-            cover_path = Path(cover_path.get("cover_path", novel_dir / "cover.jpg"))
-        elif isinstance(cover_path, str):
-            cover_path = Path(cover_path)
+    if isinstance(cover_path, dict):
+        cover_path = Path(cover_path.get("cover_path", novel_dir / "cover.jpg"))
+    elif isinstance(cover_path, str):
+        cover_path = Path(cover_path)
 
     # step 10: write all sections
     all_text = ""
