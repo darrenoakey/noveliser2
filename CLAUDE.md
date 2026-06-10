@@ -1,7 +1,9 @@
 # noveliser2 — AI novel generator
 
 Entry point: `./run create "<description>" [--title "Exact Title"] --chapters N --sections M --author "Name"`.
-`--title` forces the title (else step 1 generates one). `continue "<title>"` resumes.
+`--title` forces the title (else step 1 generates one). `--cover <path>` adopts an
+existing image as the book cover (converted to cover.jpg, no generation). `continue
+"<title>"` resumes.
 Output goes to `output/<Title>/`; every pipeline step caches a JSON there and `record()`
 skips completed steps, so runs are fully resumable (checkpoint files are raw model dumps,
 not wrapped). The process calls `setproctitle("noveliser2")`, so `pgrep -f "run create"`
@@ -10,7 +12,9 @@ will NOT find it once running — pgrep `noveliser2` or capture `$!`.
 ## Model / backend routing
 - Text: `brain.py` calls daz-agent-sdk `agent.ask(tier=Tier.FREE_FAST)`. The active model is
   set in `~/.daz-agent-sdk/config.yaml` — currently `boringstack:qwen3.6:35b-a3b` (a remote
-  Ollama box at 10.0.0.237). `chat`/`chat_structured` take an optional `tier=` override.
+  Ollama box — DHCP-assigned IP, was 10.0.0.237, now 10.0.0.42; if unreachable check the
+  asus router's dnsmasq leases for "boringstack"). `chat`/`chat_structured` take an
+  optional `tier=` override.
 - Images: `generate_images.py` calls `agent.image()` (no provider) → codex provider.
 - Embeddings: `agent.embed()` → arbiter on spark (10.0.0.254). 768-dim.
 - The SDK is **editable-installed** in `.venv` (`python -m pip install -e ~/src/daz-agent-sdk
