@@ -272,3 +272,127 @@ def test_old_shape_writing_style_and_section_load():
     # word target still resolves for an old-shape section
     lo, hi = __import__("craft").word_target_for_scene(sec)
     assert lo < hi
+
+
+# ##################################################################
+# #91 — reasoning-tier model emits planning notes instead of prose, with no
+# <think> wrapper for _strip_think to catch. Fixtures below are the actual
+# heads of two corrupted sections captured from a real generation run
+# (chapter_2_section_2.json / chapter_2_section_3.json in a test novel),
+# not a synthetic reconstruction.
+_REAL_META_COMMENTARY_HEAD_1 = (
+    "1.  **Analyze User Input:**\n   - **POV/Tense:** Third-person limited, past tense, "
+    "deeply embedded in Mara's consciousness.\n   - **Style:** Smooth, flowing literary "
+    "prose, fluid syntax, rich sensory subjectivity, layered subtext. Varied sentence "
+    "length, no fragmentation as a mannerism.\n   - **Structure/Goal:** Chapter 2, "
+    "Section 2. Processing emotional mirroring of Elias's grief."
+)
+_REAL_META_COMMENTARY_HEAD_2 = (
+    "1.  **Analyze User Input:**\n   - **Role/Task:** Novelist writing prose fiction. "
+    "Output ONLY narrative text.\n   - **Style:** Smooth, flowing literary prose.\n   - "
+    "**Chapter/Section:** Chapter 2, Section 3. Goal: Mediate with council to stop "
+    "demolition.\n   - **Dramatic Shape:** Scene (proactive)."
+)
+_REAL_PROSE_HEAD = (
+    "Mara Voss stood behind the triple-paned glass of her bay window, where the light "
+    "fell short and the air remained still enough to suspend dust motes for hours, "
+    "maintaining a ledger of Oakhaven Park's deterioration that existed only within the "
+    "synaptic pathways of her memory. She had spent decades cataloging the decay of "
+    "others' stories in the library stacks; now, at sixty-four, she applied the same "
+    "meticulous rigor to the landscape visible from her kitchen sink."
+)
+
+
+def test_looks_like_meta_commentary_flags_real_captured_failures():
+    assert ws._looks_like_meta_commentary(_REAL_META_COMMENTARY_HEAD_1) is True
+    assert ws._looks_like_meta_commentary(_REAL_META_COMMENTARY_HEAD_2) is True
+
+
+def test_looks_like_meta_commentary_false_for_real_prose():
+    assert ws._looks_like_meta_commentary(_REAL_PROSE_HEAD) is False
+
+
+def test_looks_like_meta_commentary_false_for_empty():
+    assert ws._looks_like_meta_commentary("") is False
+
+
+def test_looks_like_meta_commentary_false_for_incidental_numbered_sentence():
+    # prose that happens to open with a number should not false-positive —
+    # only a numbered *bold markdown header* or an explicit label marker does.
+    text = "1,200 people showed up to the vigil, more than anyone expected."
+    assert ws._looks_like_meta_commentary(text) is False
+
+
+# ##################################################################
+# #93 — truncated response (reasoning budget crowds out the visible answer).
+# fixture below is the actual full text of a corrupted section captured from
+# a real generation run (chapter_2_section_3.json in a test novel), which
+# stopped mid-sentence at 94 words against a 1500-word target floor.
+_REAL_TRUNCATED_SECTION = (
+    "Mara’s declaration hung in the turpentine-scented air, a quiet promise that "
+    "felt both fragile and irrevocable. Elias did not answer immediately. He watched "
+    "her from beneath the heavy brow of a man who had spent years learning how to "
+    "make himself invisible, his posture rigid against the drafting table as though "
+    "bracing for an impact he could not outrun. The silence stretched, filled only "
+    "by the rhythmic tap of a dripping faucet and the soft scrape of Biscuit’s "
+    "claws on cracked concrete. When Elias finally spoke, his voice carried that "
+    "crisp, academic precision she'"
+)
+
+
+def test_looks_truncated_flags_real_captured_failure():
+    assert ws._looks_truncated(_REAL_TRUNCATED_SECTION, word_lo=1500) is True
+
+
+def test_looks_truncated_false_for_real_prose_at_target_length():
+    full_length_prose = (_REAL_PROSE_HEAD + " ") * 20  # well over any word floor
+    assert ws._looks_truncated(full_length_prose, word_lo=1100) is False
+
+
+def test_looks_truncated_false_for_legitimately_short_fast_scene():
+    # a real "fast" scene's floor is 1100 words (craft.word_target_for_scene) —
+    # text right at half that floor, ending cleanly, must not false-positive.
+    text = " ".join(["word"] * 550) + " done."
+    assert ws._looks_truncated(text, word_lo=1100) is False
+
+
+def test_looks_truncated_true_for_empty():
+    assert ws._looks_truncated("", word_lo=1100) is True
+
+
+# fixture below is the actual tail of a second corrupted section captured
+# from a real generation run (chapter_2_section_3.json in a later test-novel
+# run) — 1667 words, well over the target floor, but the very last sentence
+# stops mid-clause on a bare comma instead of finishing.
+_REAL_TAIL_TRUNCATED_ENDING = (
+    "...the demolition crew's voices rose beyond the fence, the mechanical whine "
+    "of generators spooling up for the morning. The sky above the marsh lightened "
+    "to a thin,"
+)
+
+
+def test_looks_truncated_flags_real_captured_tail_truncation_despite_good_length():
+    long_but_cut_off = (_REAL_PROSE_HEAD + " ") * 20 + _REAL_TAIL_TRUNCATED_ENDING
+    assert ws._looks_truncated(long_but_cut_off, word_lo=1100) is True
+
+
+def test_looks_truncated_false_for_intentional_em_dash_cliffhanger():
+    long_cliffhanger = (_REAL_PROSE_HEAD + " ") * 20 + "The door creaked open —"
+    assert ws._looks_truncated(long_cliffhanger, word_lo=1100) is False
+
+
+def test_invalid_prose_reason_prioritizes_meta_commentary_over_truncation():
+    # a short response that ALSO looks like meta-commentary should report the
+    # meta-commentary defect (it's the more specific / actionable diagnosis).
+    reason = ws._invalid_prose_reason(_REAL_META_COMMENTARY_HEAD_1, word_lo=1500)
+    assert reason is not None and "planning/analysis notes" in reason
+
+
+def test_invalid_prose_reason_reports_truncation():
+    reason = ws._invalid_prose_reason(_REAL_TRUNCATED_SECTION, word_lo=1500)
+    assert reason is not None and "truncated" in reason
+
+
+def test_invalid_prose_reason_none_for_valid_prose():
+    full_length_prose = (_REAL_PROSE_HEAD + " ") * 20
+    assert ws._invalid_prose_reason(full_length_prose, word_lo=1100) is None

@@ -31,6 +31,8 @@ import re
 from difflib import SequenceMatcher
 from pathlib import Path
 
+from daz_agent_sdk import Tier
+
 from models import (
     Chapter,
     ChapterPlan,
@@ -42,7 +44,7 @@ from models import (
 )
 from retrieval_memory import RetrievalMemory
 
-from brain import PROSE_TIER, chat
+from brain import PROSE_TIER, TIER, chat
 from craft import (
     PROSE_CRAFT,
     render_canon_facts,
@@ -86,12 +88,35 @@ _WORD_RE = re.compile(r"[A-Za-z'’]+")
 _PROPER_RE = re.compile(r"\b([A-Z][a-zA-Z’'\-]{2,})\b")
 _SENT_SPLIT_RE = re.compile(r"(?<=[.!?])\s+(?=[\"'“‘A-Z0-9])")
 _THINK_RE = re.compile(r"<\s*(think|thinking|reasoning)\s*>.*?<\s*/\s*\1\s*>", re.IGNORECASE | re.DOTALL)
+_NUMBERED_BOLD_HEADER_RE = re.compile(r"^\s*\d+\.\s*\*\*")
+_META_MARKERS = (
+    "analyze user input", "pov/tense:", "canon facts:", "canon/facts:",
+    "dramatic shape:", "structure/goal:", "role/task:", "chapter/section:",
+)
 
 _DEDUP_RETRY_INSTRUCTION = (
     "\n\nIMPORTANT: Do NOT repeat or lightly reword the previous scene. The draft that "
     "would naturally follow here is too similar to the section just written. Write a "
     "GENUINELY NEW scene that advances the story — different setting, action, and beats — "
     "while staying consistent with the established facts."
+)
+
+# #91/#93 — a reasoning-tier model occasionally produces invalid prose: either
+# its own planning notes (a numbered, markdown-bold-headed breakdown of
+# POV/style/canon facts/etc.) with no <think> wrapper for _strip_think to
+# catch, or a response that stops mid-sentence far short of the target length
+# (the "thinking" budget crowds out the visible answer). Both are bounded to
+# exactly one same-tier retry, then one fallback-tier retry on the reliable
+# non-reasoning TIER; if that also fails, raise rather than silently saving
+# broken text as the novel's prose.
+_INVALID_PROSE_RETRY_INSTRUCTION = (
+    "\n\nCRITICAL: Your previous response was invalid — either your own "
+    "planning/analysis notes (headers, numbered lists, labels like 'POV/Tense:' or "
+    "'Canon Facts:') instead of a story, or it stopped abruptly mid-sentence far "
+    "short of the target length. Do not repeat that mistake. Output ONLY complete, "
+    "flowing narrative prose at the requested length — no headers, no bullet "
+    "points, no bold labels, no restating these instructions, and finish every "
+    "sentence and the scene itself before stopping."
 )
 
 
@@ -180,6 +205,26 @@ def write_section(chapter: Chapter, section: Section, previous_text: str,
 
     # initial draft
     section_text = _postprocess(_generate_prose(prompt_ctx, ""))
+
+    # #91/#93 — reasoning-tier model returned planning notes or a mid-sentence
+    # truncation instead of a finished story. Bounded: one same-tier retry with
+    # a reinforced instruction, then one fallback-tier retry on the reliable
+    # non-reasoning TIER. If it's still invalid, raise — never save broken text
+    # as the novel's text.
+    defect = _invalid_prose_reason(section_text, lo)
+    if defect:
+        section_text = _postprocess(_generate_prose(prompt_ctx, _INVALID_PROSE_RETRY_INSTRUCTION))
+        defect = _invalid_prose_reason(section_text, lo)
+        if defect:
+            section_text = _postprocess(
+                _generate_prose(prompt_ctx, _INVALID_PROSE_RETRY_INSTRUCTION, tier=TIER)
+            )
+            defect = _invalid_prose_reason(section_text, lo)
+            if defect:
+                raise ValueError(
+                    f"section {section_id}: {defect} after two retries "
+                    "(including a non-reasoning-tier fallback)"
+                )
 
     # #16 — near-duplicate guard, bounded to EXACTLY one retry.
     dedup_warning = None
@@ -551,9 +596,11 @@ def _render_pov_tense(writing_style: WritingStyle) -> str:
 # ##################################################################
 # generate prose
 # build the system + user prompt from the shared context and call the model on
-# the escalated PROSE_TIER (#46). extra_instruction lets the dedup retry append
-# a directive so it becomes a genuinely fresh (non-cached) generation.
-def _generate_prose(ctx: _PromptContext, extra_instruction: str) -> str:
+# the escalated PROSE_TIER (#46) by default. extra_instruction lets a retry
+# append a directive so it becomes a genuinely fresh (non-cached) generation;
+# tier lets the meta-commentary fallback (#91) drop to the reliable
+# non-reasoning TIER for its final attempt.
+def _generate_prose(ctx: _PromptContext, extra_instruction: str, tier: Tier = PROSE_TIER) -> str:
     ws = ctx.writing_style
     system_content = f"""You are a novelist writing prose fiction. You output ONLY narrative text - no commentary, no meta-discussion, no preamble, no "I'll write..." statements. Just the story itself.
 
@@ -592,7 +639,7 @@ Output ONLY the story text. No headers, no commentary, no meta-text. Begin the n
         {"role": "system", "content": system_content},
         {"role": "user", "content": user_content},
     ]
-    return chat(messages, max_tokens=2400, tier=PROSE_TIER)
+    return chat(messages, max_tokens=2400, tier=tier)
 
 
 # ##################################################################
@@ -677,3 +724,59 @@ def _clean_narrative(text: str) -> str:
         skipping = False
         cleaned.append(line)
     return "\n".join(cleaned) if cleaned else text
+
+
+# ##################################################################
+# looks like meta commentary (#91)
+# detect a response that is the model's own planning/analysis notes rather
+# than a story: a numbered, bold-headed breakdown, or prompt-label markers
+# ("POV/Tense:", "Canon Facts:", ...) appearing early in the text. Checked
+# against the postprocessed text (after _strip_think already ran), since this
+# catches the case where the model never used a <think> wrapper at all.
+def _looks_like_meta_commentary(text: str) -> bool:
+    if not text:
+        return False
+    stripped = text.strip()
+    if _NUMBERED_BOLD_HEADER_RE.match(stripped):
+        return True
+    head = stripped[:800].lower()
+    return any(marker in head for marker in _META_MARKERS)
+
+
+# characters a genuinely finished scene may end on: standard sentence-enders,
+# a closing quote/paren after one, or an intentional dramatic trail-off
+# (em-dash / ellipsis are common deliberate cliffhanger endings in fiction).
+_CLEAN_ENDING_CHARS = frozenset(".!?\"”’')—…")
+
+
+# ##################################################################
+# looks truncated (#93)
+# detect a response that was cut off before finishing — either far short of
+# the target length (the "thinking" budget on the reasoning tier occasionally
+# crowds out the visible answer, leaving a short fragment), or one that
+# reached a healthy length but still stops mid-clause on a comma/bare word at
+# the very end. The length check uses a generous 50% floor against the
+# section's own (already-adaptive) word-count lower bound so this never flags
+# a legitimately short "fast" scene.
+def _looks_truncated(text: str, word_lo: int) -> bool:
+    if not text or not text.strip():
+        return True
+    stripped = text.strip()
+    if len(stripped.split()) < word_lo * 0.5:
+        return True
+    return stripped[-1] not in _CLEAN_ENDING_CHARS
+
+
+# ##################################################################
+# invalid prose reason (#91/#93)
+# combined check run after every draft/retry: returns a human-readable defect
+# description if `text` isn't usable prose, else None.
+def _invalid_prose_reason(text: str, word_lo: int) -> str | None:
+    if _looks_like_meta_commentary(text):
+        return "model returned planning/analysis notes instead of prose"
+    if _looks_truncated(text, word_lo):
+        return (
+            f"response was truncated at {len(text.split())} words, far short of the "
+            f"{word_lo}-word target floor"
+        )
+    return None

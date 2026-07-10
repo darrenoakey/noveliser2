@@ -21,9 +21,16 @@ import asyncio
 import json
 import math
 import re
+import time
 from pathlib import Path
 
-from daz_agent_sdk import agent
+from daz_agent_sdk import AgentError, agent
+
+# a remote arbiter embedding job occasionally dies transiently (subprocess
+# crash on the GPU box) — bounded retry with backoff so one flaky job doesn't
+# abort an entire multi-hour novel generation run.
+_EMBED_MAX_ATTEMPTS = 3
+_EMBED_RETRY_DELAY_SECONDS = 5.0
 
 # nomic-style task prefixes: documents and queries are embedded differently.
 _DOC_TASK = "search_document"
@@ -94,7 +101,16 @@ def _embed(texts: list[str], task: str) -> list[list[float]]:
         result = await agent.embed(texts, task=task)
         return list(result.embeddings)
 
-    return asyncio.run(_run())
+    last_error: AgentError | None = None
+    for attempt in range(1, _EMBED_MAX_ATTEMPTS + 1):
+        try:
+            return asyncio.run(_run())
+        except AgentError as e:
+            last_error = e
+            if attempt < _EMBED_MAX_ATTEMPTS:
+                time.sleep(_EMBED_RETRY_DELAY_SECONDS * attempt)
+    assert last_error is not None
+    raise last_error
 
 
 # ##################################################################
