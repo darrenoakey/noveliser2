@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from pathlib import Path
 
@@ -19,10 +20,17 @@ from enhance_outline import enhance_outline
 from define_writing_style import define_writing_style
 from break_into_chapters import break_into_chapters
 from break_into_sections import break_into_sections
-from write_section import write_section
+from write_section import write_section, summarize_chapter
 from generate_images import generate_cover, generate_chapter_image, use_cover_image
 from epub_generator import create_epub
 from backend import skip_images
+
+# The fact ledger lands in a parallel wave; integrate against it when present,
+# and degrade gracefully (retrieval memory alone) when it is not yet available.
+try:
+    from fact_ledger import FactLedger  # type: ignore
+except Exception:  # pragma: no cover - exercised only before the ledger lands
+    FactLedger = None
 
 
 # ##################################################################
@@ -135,8 +143,21 @@ def write_novel(description: str, output_dir: Path, num_chapters: int = 10,
     content_by_chapter = {}
     chapter_images = {}
 
+    # fact ledger (#1/#2/#76): rebuilt deterministically every run by replaying
+    # each section's stored/extracted facts through it, so resume needs no
+    # separate rebuild step and old checkpoints (empty new_facts) load fine.
+    ledger = FactLedger() if FactLedger is not None else None
+    ledger_path = novel_dir / "fact_ledger.json"
+
+    # compact per-chapter summaries used as long-term memory in later chapters
+    # (#14). prev_section_text feeds the near-dup guard (#16) + recap (#65).
+    chapter_summaries: dict[int, str] = {}
+    prev_section_text = ""
+    section_ordinal = 0  # integer write-order stamp for ledger facts (#3)
+
     for chapter in chapter_plan.chapters:
         content_by_chapter[chapter.number] = {}
+        prior_summaries = _render_prior_summaries(chapter_summaries, chapter.number)
 
         # generate chapter image
         if not skip_images():
@@ -160,25 +181,44 @@ def write_novel(description: str, output_dir: Path, num_chapters: int = 10,
         )
         sections = _extract_sections(section_plan_result)
 
+        chapter_text = ""
         for section in sections:
             is_final = (chapter.number == num_chapters and section.number == sections_per_chapter)
 
             section_result = record(
                 f"Write chapter {chapter.number} section {section.number}",
-                lambda ch=chapter, sec=section, txt=all_text, mem=memory: write_section(
-                    ch, sec, txt, mem, characters, writing_style, chapter_plan, is_final
+                lambda ch=chapter, sec=section, txt=all_text, mem=memory,
+                       lg=ledger, ps=prior_summaries, prev=prev_section_text: write_section(
+                    ch, sec, txt, mem, characters, writing_style, chapter_plan, is_final,
+                    ledger=lg, prior_summaries=ps, prev_section_text=prev,
+                    novel_dir=novel_dir,
                 ),
                 novel_dir,
             )
 
-            section_text, _ = _extract_section_result(section_result)
+            section_text, section_facts = _extract_section_result(section_result)
             # embed this section into the retrieval memory (idempotent — on resume
             # a cached section is embedded here so later sections can retrieve it).
             section_id = f"ch{chapter.number}.s{section.number}"
             memory.ensure_section(section_id, section_text)
             memory.save(memory_path)
+            # feed facts into the ledger so canon facts accumulate as the run
+            # progresses (rebuilt identically on resume from cached new_facts).
+            _update_ledger(ledger, ledger_path, section_facts, section_ordinal)
+            section_ordinal += 1
             all_text += "\n\n" + section_text
+            chapter_text += "\n\n" + section_text
+            prev_section_text = section_text
             content_by_chapter[chapter.number][section.number] = section_text
+
+        # #14 — compact long-term summary for this completed chapter, cached as a
+        # record() checkpoint so resume does not regenerate it.
+        summary_result = record(
+            f"Summarize chapter {chapter.number}",
+            lambda ch=chapter, txt=chapter_text: {"summary": summarize_chapter(ch, txt)},
+            novel_dir,
+        )
+        chapter_summaries[chapter.number] = _extract_summary(summary_result)
 
     # step 11: create epub
     chapters_data = [ch.model_dump() if hasattr(ch, "model_dump") else ch for ch in chapter_plan.chapters]
@@ -309,6 +349,63 @@ def _extract_section_result(result):
         elif isinstance(entry, dict):
             facts.append(Fact(**entry))
     return text, facts
+
+
+# ##################################################################
+# render prior summaries
+# join the compact summaries of all chapters before `current` into a long-term
+# memory block for write_section (#14). Empty for the first chapter.
+def _render_prior_summaries(summaries: dict[int, str], current: int) -> str:
+    parts = []
+    for num in sorted(summaries):
+        if num >= current:
+            continue
+        text = (summaries.get(num) or "").strip()
+        if text:
+            parts.append(f"Chapter {num}: {text}")
+    return "\n".join(parts)
+
+
+# ##################################################################
+# extract summary
+# unwrap a chapter-summary record() result (live dict or restored json)
+def _extract_summary(result) -> str:
+    if isinstance(result, dict):
+        return str(result.get("summary", "") or "")
+    if hasattr(result, "summary"):
+        return str(result.summary or "")
+    return str(result or "")
+
+
+# ##################################################################
+# update ledger
+# feed a section's facts into the fact ledger, section-stamped by integer write
+# ordinal (the shape FactLedger.update expects), and persist it. Facts arrive as
+# models.Fact (subject/attribute/value); the ledger speaks entity/attribute/value,
+# so translate. No-op without a ledger; best-effort — a ledger hiccup never
+# breaks section generation.
+def _update_ledger(ledger, ledger_path: Path, facts, ordinal: int) -> None:
+    if ledger is None:
+        return
+    try:
+        payload = []
+        for f in facts:
+            subject = getattr(f, "subject", "") or getattr(f, "entity", "")
+            attribute = getattr(f, "attribute", "")
+            value = getattr(f, "value", "")
+            if subject and attribute and value:
+                payload.append({"entity": subject, "attribute": attribute, "value": value})
+        if hasattr(ledger, "update"):
+            ledger.update(payload, ordinal)
+        if hasattr(ledger, "save"):
+            ledger.save(ledger_path)
+        elif hasattr(ledger, "to_dict"):
+            ledger_path.write_text(
+                json.dumps(ledger.to_dict(), indent=2, ensure_ascii=False, default=str),
+                encoding="utf-8",
+            )
+    except Exception:
+        return
 
 
 # ##################################################################
