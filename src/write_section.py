@@ -59,11 +59,16 @@ RETRIEVAL_K = 12
 
 # ##################################################################
 # feature flags (#85)
-# ENABLE_REVISION_PASS defaults OFF: the extra critique-and-line-edit call
-# doubles the per-section prose cost, so it is opt-in. The near-dup retry and
-# drift/repetition logging are cheap (the retry only fires on an actual
-# collision, the logging makes no model call), so they default ON.
-ENABLE_REVISION_PASS = False
+# ENABLE_REVISION_PASS defaults ON: a real end-to-end test novel showed the
+# exact defects this pass targets — overused setting phrases repeated across
+# multiple sections ("edge of the marsh") and planned climactic beats silently
+# dropped from the prose (a bribery attempt, a viral social-media turn) — were
+# being logged by ENABLE_DRIFT_LOG but never corrected, because the pass that
+# consumes those signals was gated off. The extra critique-and-line-edit call
+# doubles per-section prose cost, but leaving proven, planned drama out of a
+# generated novel is a worse defect than the added latency. The near-dup retry
+# and drift/repetition logging are cheap regardless, so they stay ON too.
+ENABLE_REVISION_PASS = True
 ENABLE_DEDUP_RETRY = True
 ENABLE_DRIFT_LOG = True
 

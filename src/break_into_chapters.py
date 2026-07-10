@@ -1,4 +1,5 @@
 from brain import chat_structured
+from craft import CHAPTER_HOOK_INSTRUCTION
 from models import ChapterPlan, Character, EnhancedOutline
 
 
@@ -38,6 +39,8 @@ For each chapter, provide:
 3. CHAPTER GOAL: What this chapter achieves in progressing the overall story
 4. CLOSING SITUATION: Where we are at the end (how things have changed)
 5. KEY EVENTS: Major plot points and story beats
+
+{CHAPTER_HOOK_INSTRUCTION}
 
 CRITICAL REQUIREMENTS:
 - The chapters must cover the ENTIRE story from beginning to end

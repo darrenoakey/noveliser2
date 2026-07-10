@@ -42,7 +42,31 @@ Engineer the outline for commercial, page-turning pacing:
 - Connect every beat with THEREFORE (causation) or BUT (conflict) — never
   "and then". Each success must trigger a new, worse complication.
 - Escalate three major disasters across the middle; let the protagonist's Lie
-  cause their setbacks until the Midpoint."""
+  cause their setbacks until the Midpoint.
+- RAISE THE STAKES every time: each new obstacle must be measurably worse, more
+  costly, or more dangerous than the one before it — never a repeat of the same
+  size problem. Attach a ticking clock (a real or looming deadline) wherever
+  possible so pressure keeps compounding rather than resetting.
+- USE DRAMATIC IRONY at least once: let the reader learn something a POV
+  character does not yet know (a lie, a threat closing in, another character's
+  true motive) so the reader reads on in tension waiting for the character to
+  find out."""
+
+
+# ##################################################################
+# chapter hooks — injected into chapter breakdown so every chapter is
+# engineered as a page-turner unit, not just a container for events.
+CHAPTER_HOOK_INSTRUCTION = """\
+Engineer every chapter as its own hook unit:
+- CLOSING SITUATION must function as a genuine chapter-ending hook: an
+  unresolved question, a fresh threat, a reversal, or a revelation that makes
+  a reader want to start the next chapter immediately. Never end a chapter on
+  a fully settled, resting beat — leave at least one thread visibly live.
+- For CHAPTER 1 specifically, the OPENING SITUATION must be engineered to hook
+  from literally the first page: an intriguing action, a strange detail, an
+  emotionally loaded moment, or a puzzle — not neutral scene-setting alone.
+  The reader should have a question they need answered within a paragraph or
+  two."""
 
 
 # ##################################################################
@@ -93,9 +117,15 @@ CRAFT RULES — write "unputdownable" prose:
 - SHOW, DON'T NAME: never name an emotion ("she felt terrified"). Reconstruct the
   concrete sensory triggers so the reader feels it.
 - SUBJECTIVE DESCRIPTION: describe what the POV character would notice given their
-  current emotional state — never a neutral catalogue.
+  current emotional state — never a neutral catalogue. When a description risks
+  going abstract, back up one step to the actual sensory input that produced it
+  ("the granite block fell and squashed the caterpillar," not "the stone fell
+  and squashed the bug").
 - DIALOGUE: natural and characterful, but layered with subtext; characters rarely
-  say exactly what they mean. Let real conversations breathe.
+  say exactly what they mean. Let real conversations breathe. Reveal what a
+  character is really feeling through CONTRADICTION — what they say versus what
+  their body does, or what they claim versus what they actually do next — rather
+  than having them state their feelings outright.
 - SURPRISINGNESS: juxtapose contrasting emotions (laughter through tears) for
   composite, lingering feeling.
 - RHYTHM: VARY sentence length. Most sentences flow at a natural, readable length;
