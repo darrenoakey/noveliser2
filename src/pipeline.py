@@ -85,6 +85,8 @@ def write_novel(description: str, output_dir: Path, num_chapters: int = 10,
         if in_progress.exists():
             _move_in_progress_files(in_progress, novel_dir)
 
+    assert novel_dir is not None
+
     # step 2: determine plot type
     plot_type_result = record("Determine plot type",
                              lambda: determine_plot_type(description), novel_dir)
@@ -221,7 +223,7 @@ def write_novel(description: str, output_dir: Path, num_chapters: int = 10,
         chapter_summaries[chapter.number] = _extract_summary(summary_result)
 
     # step 11: create epub
-    chapters_data = [ch.model_dump() if hasattr(ch, "model_dump") else ch for ch in chapter_plan.chapters]
+    chapters_data = [ch.model_dump() for ch in chapter_plan.chapters]
     epub_result = record(
         "Create EPUB",
         lambda: create_epub(title_str, author, chapters_data, content_by_chapter,

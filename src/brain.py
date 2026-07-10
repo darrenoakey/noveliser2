@@ -2,10 +2,12 @@ import asyncio
 import hashlib
 import json
 from pathlib import Path
-from typing import Type
+from typing import Type, TypeVar
 
 from daz_agent_sdk import agent, Tier
 from pydantic import BaseModel
+
+_ModelT = TypeVar("_ModelT", bound=BaseModel)
 
 SCRIPT_DIR = Path(__file__).parent.parent.resolve()
 CACHE_DIR = SCRIPT_DIR / "output" / "cache"
@@ -83,7 +85,7 @@ def chat(messages: list[dict[str, str]], max_tokens: int = 4096, tier: Tier = TI
     return result
 
 
-def chat_structured(messages: list[dict[str, str]], model_class: Type[BaseModel], tier: Tier = TIER) -> BaseModel:
+def chat_structured(messages: list[dict[str, str]], model_class: Type[_ModelT], tier: Tier = TIER) -> _ModelT:
     selector = f"tier:{tier.value}"
     hash_key = _hash_input(messages, selector, extra=model_class.__name__)
     cached = _load_from_cache(hash_key)
@@ -92,7 +94,7 @@ def chat_structured(messages: list[dict[str, str]], model_class: Type[BaseModel]
 
     system_prompt, user_prompt = _split_messages(messages)
 
-    async def _run() -> BaseModel:
+    async def _run() -> _ModelT:
         response = await agent.ask(
             user_prompt,
             tier=tier,

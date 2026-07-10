@@ -204,7 +204,7 @@ def write_section(chapter: Chapter, section: Section, previous_text: str,
     # dropped beats via targeted line edits, never a full regeneration.
     if enable_revision_pass:
         section_text = _postprocess(
-            _revise_prose(prompt_ctx, section_text, overused, dropped_beats)
+            _revise_prose(section_text, overused, dropped_beats)
         )
         # recompute the log signals against the revised text
         overused = overused_ngrams(section_text, previous_text, NGRAM_REPEAT_THRESHOLD)
@@ -427,7 +427,7 @@ def _log_continuity_warnings(novel_dir: Path | None, section_id: str,
         return
     if not (dedup_warning or overused or dropped_beats):
         return
-    entry = {"section": section_id}
+    entry: dict[str, str | list[str]] = {"section": section_id}
     if dedup_warning:
         entry["near_duplicate"] = dedup_warning
     if overused:
@@ -600,7 +600,7 @@ Output ONLY the story text. No headers, no commentary, no meta-text. Begin the n
 # one bounded critique-and-line-edit pass. Requests TARGETED edits against a
 # short rubric (show-vs-tell, voice distinctness, cliché density, hook strength)
 # plus the specific over-used phrases and dropped beats — never a full rewrite.
-def _revise_prose(ctx: _PromptContext, draft: str, overused: list[str],
+def _revise_prose(draft: str, overused: list[str],
                   dropped_beats: list[str]) -> str:
     notes = []
     if overused:

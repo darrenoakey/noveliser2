@@ -8,15 +8,16 @@ these functions so the guards are testable without a model call."""
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from models import Character, Fact, Section, SectionResult, WritingStyle  # noqa: E402
+from models import Character, CharacterRole, Fact, Section, SectionResult, WritingStyle  # noqa: E402
 import write_section as ws  # noqa: E402
 
 
 def _char(name, bio="a person", traits=None, **kw):
-    return Character(name=name, biography=bio, role="protagonist",
+    return Character(name=name, biography=bio, role=CharacterRole.PROTAGONIST,
                      traits=traits or [], **kw)
 
 
@@ -253,7 +254,7 @@ def test_section_result_new_facts_roundtrip():
 # #83 — OLD-shape checkpoints (no new_facts, no ledger/summary data) still load
 def test_old_shape_section_checkpoint_loads():
     # an old checkpoint predates new_facts entirely
-    old = {"text": "some earlier prose"}
+    old: dict[str, Any] = {"text": "some earlier prose"}
     sr = SectionResult(**old)
     assert sr.text == "some earlier prose"
     assert sr.new_facts == []

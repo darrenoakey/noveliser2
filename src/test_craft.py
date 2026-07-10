@@ -13,7 +13,7 @@ from craft import (  # noqa: E402
     render_name_roster,
     word_target_for_scene,
 )
-from models import Character, Section, WritingStyle  # noqa: E402
+from models import Character, CharacterRole, Section, WritingStyle  # noqa: E402
 
 
 # ##################################################################
@@ -27,7 +27,7 @@ def test_prose_craft_bans_measured_phrases():
 # ##################################################################
 # #39 — voice fingerprint model fields default (old checkpoints load)
 def test_character_voice_fields_default_empty():
-    c = Character(name="Mara", biography="b", role="protagonist", traits=["bold"])
+    c = Character(name="Mara", biography="b", role=CharacterRole.PROTAGONIST, traits=["bold"])
     assert c.voice_register == ""
     assert c.sentence_style == ""
     assert c.verbal_tic == ""
@@ -37,7 +37,7 @@ def test_render_character_voice_formats_set_fields():
     c = Character(
         name="Mara",
         biography="b",
-        role="protagonist",
+        role=CharacterRole.PROTAGONIST,
         traits=["bold"],
         voice_register="terse working-class slang",
         sentence_style="clipped one-liners",
@@ -51,7 +51,7 @@ def test_render_character_voice_formats_set_fields():
 
 
 def test_render_character_voice_empty_when_no_fields():
-    c = Character(name="Mara", biography="b", role="minor", traits=[])
+    c = Character(name="Mara", biography="b", role=CharacterRole.MINOR, traits=[])
     assert render_character_voice(c) == ""
 
 
@@ -59,7 +59,7 @@ def test_render_character_voice_partial_fields():
     c = Character(
         name="Ida",
         biography="b",
-        role="supporting",
+        role=CharacterRole.SUPPORTING,
         traits=[],
         verbal_tic="over-apologizes",
     )
