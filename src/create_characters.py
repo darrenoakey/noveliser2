@@ -1,5 +1,5 @@
 from brain import chat_structured
-from craft import CHARACTER_ENGINE_INSTRUCTION
+from craft import CHARACTER_ENGINE_INSTRUCTION, CHARACTER_VOICE_INSTRUCTION
 from models import CharactersList
 
 
@@ -27,6 +27,8 @@ Themes: {theme_text}
 
 Create characters with full biographies and personality traits.
 
-{CHARACTER_ENGINE_INSTRUCTION}{character_instruction}"""},
+{CHARACTER_ENGINE_INSTRUCTION}
+
+{CHARACTER_VOICE_INSTRUCTION}{character_instruction}"""},
     ]
     return chat_structured(messages, CharactersList)

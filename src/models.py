@@ -103,6 +103,9 @@ class Character(BaseModel):
     want: str = Field(default="", description="Concrete external goal they pursue in the plot")
     need: str = Field(default="", description="Internal truth they must accept to become whole (often the opposite of the Lie)")
     arc: str = Field(default="", description="Arc type: positive change, flat, disillusionment, or corruption")
+    voice_register: str = Field(default="", description="Vocabulary register / diction of this character's speech (e.g. 'terse working-class slang', 'ornate academic formality', 'warm folksy plainspokenness')")
+    sentence_style: str = Field(default="", description="Sentence-length and rhythm tendency in dialogue (e.g. 'clipped one-liners', 'long winding qualified sentences', 'blunt declaratives')")
+    verbal_tic: str = Field(default="", description="A distinctive verbal habit, catchphrase, or filler this character reaches for (e.g. always says 'right?', over-apologizes, quotes scripture)")
 
 
 # ##################################################################
@@ -121,6 +124,8 @@ class WritingStyle(BaseModel):
     voice: str = Field(description="Narrative perspective and voice")
     pacing: str = Field(description="Story pacing approach")
     examples: list[str] = Field(description="2-3 example sentences showing the style")
+    pov: str = Field(default="", description="Structured point of view, e.g. 'first person', 'third limited', 'third omniscient', 'second person'")
+    tense: str = Field(default="", description="Structured narrative tense, e.g. 'past' or 'present'")
 
 
 # ##################################################################
@@ -160,6 +165,7 @@ class Section(BaseModel):
     key_events: str = Field(description="Specific events and story beats")
     scene_type: str = Field(default="scene", description="'scene' (proactive: goal/conflict/disaster) or 'sequel' (reactive: reaction/dilemma/decision)")
     disaster: str = Field(default="", description="The setback that ends a scene, or the hard decision/new risk that ends a sequel")
+    intensity: str = Field(default="medium", description="Pacing intensity: 'fast'/'tense' (action, danger, confrontation — write shorter and leaner), 'medium' (default), or 'slow'/'reflective' (aftermath, introspection, emotional processing — write longer and more expansive)")
 
 
 # ##################################################################

@@ -10,7 +10,18 @@ from pydantic import BaseModel
 SCRIPT_DIR = Path(__file__).parent.parent.resolve()
 CACHE_DIR = SCRIPT_DIR / "output" / "cache"
 
+# Default tier for every cheap/structural stage (title, outline, characters,
+# section planning, style, etc.). Kept on the fast local model for cost.
 TIER = Tier.FREE_FAST
+
+# Escalated tier for reader-facing long-form PROSE generation only
+# (write_section's prose call passes tier=PROSE_TIER explicitly). FREE_THINKING
+# routes to the same remote boringstack model in reasoning mode — a genuinely
+# stronger tier for prose quality that stays free/local, so it adds no cloud
+# cost and no local-OOM risk. It is the strongest tier actually mapped in
+# ~/.daz-agent-sdk/config.yaml (HIGH/MEDIUM/LOW/VERY_HIGH are unmapped here);
+# every other stage stays on TIER (FREE_FAST).
+PROSE_TIER = Tier.FREE_THINKING
 
 
 def _hash_input(messages: list[dict], selector: str, extra: str = "") -> str:
