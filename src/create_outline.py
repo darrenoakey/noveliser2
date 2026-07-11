@@ -62,4 +62,4 @@ Return a compact planning outline only:
 
 Keep the whole response under 1200 words. The story should feel complete and satisfying at this length, not like a fragment or the beginning of a longer work."""},
     ]
-    return chat(messages, max_tokens=2048)
+    return chat(messages, max_tokens=8192)

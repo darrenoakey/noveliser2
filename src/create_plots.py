@@ -193,7 +193,7 @@ def write_plot_story(
             {"role": "system", "content": system},
             {"role": "user", "content": user + extra},
         ]
-        return _postprocess(chat(messages, max_tokens=4096, tier=tier, validate=_valid))
+        return _postprocess(chat(messages, max_tokens=12288, tier=tier, validate=_valid))
 
     # draft on the escalated prose tier, with the same bounded retry/fallback
     # discipline as section prose: one reinforced same-tier retry, one
@@ -242,7 +242,7 @@ def _revise_story(draft: str) -> str:
     try:
         revised = _postprocess(chat(
             [{"role": "system", "content": system}, {"role": "user", "content": user}],
-            max_tokens=4096, tier=PROSE_TIER, validate=_valid,
+            max_tokens=12288, tier=PROSE_TIER, validate=_valid,
         ))
     except Exception:
         return draft

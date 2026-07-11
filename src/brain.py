@@ -85,7 +85,8 @@ def chat(messages: list[dict[str, str]], max_tokens: int = 4096, tier: Tier = TI
     system_prompt, user_prompt = _split_messages(messages)
 
     async def _run() -> str:
-        response = await agent.ask(user_prompt, tier=tier, system=system_prompt or None)
+        response = await agent.ask(user_prompt, tier=tier, system=system_prompt or None,
+                                   max_tokens=max_tokens)
         return response.text
 
     result = asyncio.run(_run())

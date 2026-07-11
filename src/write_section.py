@@ -627,7 +627,7 @@ def summarize_chapter(chapter: Chapter, chapter_text: str) -> str:
         {"role": "system", "content": system_content},
         {"role": "user", "content": user_content},
     ]
-    return _postprocess(chat(messages, max_tokens=400)).strip()
+    return _postprocess(chat(messages, max_tokens=4096)).strip()
 
 
 # ##################################################################
@@ -746,7 +746,7 @@ Output ONLY the story text. No headers, no commentary, no meta-text. Begin the n
     # #95 — cache guard: never cache (and never trust a cached) response that
     # is planning notes or a truncation. Without this, one bad generation
     # poisons brain.py's content-hash cache and every resume replays it.
-    return chat(messages, max_tokens=2400, tier=tier,
+    return chat(messages, max_tokens=12288, tier=tier,
                 validate=lambda raw: _invalid_prose_reason(_postprocess(raw), ctx.word_lo) is None)
 
 
@@ -808,7 +808,7 @@ def _revise_prose(draft: str, overused: list[str],
     # be prose, not planning notes; use half the draft's length as the floor
     # (a line-edit shouldn't shrink the section drastically).
     floor = max(1, len(draft.split()) // 2)
-    return chat(messages, max_tokens=2400, tier=PROSE_TIER,
+    return chat(messages, max_tokens=12288, tier=PROSE_TIER,
                 validate=lambda raw: _invalid_prose_reason(_postprocess(raw), floor) is None)
 
 
