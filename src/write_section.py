@@ -44,7 +44,9 @@ from models import (
 )
 from retrieval_memory import RetrievalMemory
 
-from brain import PROSE_TIER, TIER, chat
+from pydantic import BaseModel, Field
+
+from brain import PROSE_TIER, TIER, chat, chat_structured
 from craft import (
     PROSE_CRAFT,
     render_canon_facts,
@@ -256,8 +258,11 @@ def write_section(chapter: Chapter, section: Section, previous_text: str,
 
     # #38 — repetition guard against the manuscript so far.
     overused = overused_ngrams(section_text, previous_text, NGRAM_REPEAT_THRESHOLD)
-    # #30 — plan-vs-prose drift (cheap keyword heuristic, non-blocking).
-    dropped_beats = find_dropped_beats(section, section_text)
+    # #30/#94 — plan-vs-prose drift: cheap keyword prefilter, then semantic
+    # confirmation of the suspects so paraphrased beats don't get flagged.
+    dropped_beats = confirm_dropped_beats(
+        section_text, find_dropped_beats(section, section_text)
+    )
 
     # #36 — one optional, gated revision pass; addresses over-used phrases and
     # dropped beats via targeted line edits, never a full regeneration.
@@ -267,7 +272,9 @@ def write_section(chapter: Chapter, section: Section, previous_text: str,
         )
         # recompute the log signals against the revised text
         overused = overused_ngrams(section_text, previous_text, NGRAM_REPEAT_THRESHOLD)
-        dropped_beats = find_dropped_beats(section, section_text)
+        dropped_beats = confirm_dropped_beats(
+            section_text, find_dropped_beats(section, section_text)
+        )
 
     if ENABLE_DRIFT_LOG:
         _log_continuity_warnings(
@@ -416,6 +423,68 @@ def find_dropped_beats(section: Section, prose: str) -> list[str]:
         if present / len(content) < 0.34:
             dropped.append(beat.strip())
     return dropped
+
+
+# ##################################################################
+# semantic beat confirmation (#94)
+# the keyword prefilter above cannot tell a genuinely dropped beat from a
+# paraphrased one ("abandons the maps, trusting Biscuit's nose" rendered as
+# "she folded the useless survey and let the dog lead" shares zero keywords),
+# so with multi-plot chapters it over-flags and the revision pass chases
+# noise. For the (usually few) suspects the prefilter raises, ONE cheap
+# FAST-tier structured call asks whether each beat's dramatic content actually
+# occurs in the prose, even paraphrased. Costs nothing when nothing is
+# flagged; on any error or a malformed reply it falls back to the unfiltered
+# suspect list (never lose a real drop to a flaky check, never crash a run).
+class _BeatCheck(BaseModel):
+    beat: str = Field(description="The planned beat, verbatim as given")
+    dramatized: bool = Field(description="True if this beat's events actually happen in the prose, even reworded, renamed, or paraphrased")
+
+
+class _BeatChecks(BaseModel):
+    checks: list[_BeatCheck] = Field(default_factory=list, description="One verdict per beat, in the order given")
+
+
+_MAX_BEAT_SUSPECTS = 8
+
+
+def _reconcile_beat_checks(suspects: list[str], checks: list) -> list[str]:
+    # pure mapping: keep every suspect the model did NOT positively confirm as
+    # dramatized. Verdicts are matched by position; a count mismatch keeps the
+    # unmatched tail (conservative — a lost real drop is worse than a spurious
+    # weave-in request).
+    if len(checks) != len(suspects):
+        checks = list(checks)[:len(suspects)]
+    kept: list[str] = []
+    for i, suspect in enumerate(suspects):
+        if i < len(checks) and getattr(checks[i], "dramatized", False):
+            continue
+        kept.append(suspect)
+    return kept
+
+
+def confirm_dropped_beats(section_text: str, suspects: list[str]) -> list[str]:
+    if not suspects:
+        return []
+    suspects = suspects[:_MAX_BEAT_SUSPECTS]
+    numbered = "\n".join(f"{i + 1}. {b}" for i, b in enumerate(suspects))
+    messages = [
+        {"role": "system", "content": (
+            "You are a continuity checker. For each planned story beat, decide whether "
+            "its dramatic content actually OCCURS in the prose — count it as dramatized "
+            "if the events happen even reworded, renamed, compressed, or paraphrased. "
+            "Only mark a beat NOT dramatized when its substance is genuinely absent."
+        )},
+        {"role": "user", "content": (
+            f"PROSE:\n{section_text}\n\nPLANNED BEATS:\n{numbered}\n\n"
+            "Return one verdict per beat, in order."
+        )},
+    ]
+    try:
+        result = chat_structured(messages, _BeatChecks)
+        return _reconcile_beat_checks(suspects, result.checks)
+    except Exception:
+        return suspects
 
 
 def _split_beats(key_events: str) -> list[str]:

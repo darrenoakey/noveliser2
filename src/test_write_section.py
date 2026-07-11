@@ -396,3 +396,56 @@ def test_invalid_prose_reason_reports_truncation():
 def test_invalid_prose_reason_none_for_valid_prose():
     full_length_prose = (_REAL_PROSE_HEAD + " ") * 20
     assert ws._invalid_prose_reason(full_length_prose, word_lo=1100) is None
+
+
+# ##################################################################
+# #94 — semantic beat confirmation: pure reconcile logic
+def test_reconcile_beat_checks_filters_confirmed_dramatized():
+    suspects = ["beat one happens", "beat two happens"]
+    checks = [ws._BeatCheck(beat="beat one happens", dramatized=True),
+              ws._BeatCheck(beat="beat two happens", dramatized=False)]
+    assert ws._reconcile_beat_checks(suspects, checks) == ["beat two happens"]
+
+
+def test_reconcile_beat_checks_count_mismatch_keeps_unmatched_tail():
+    suspects = ["a", "b", "c"]
+    checks = [ws._BeatCheck(beat="a", dramatized=True)]  # model returned too few
+    assert ws._reconcile_beat_checks(suspects, checks) == ["b", "c"]
+
+
+def test_reconcile_beat_checks_extra_checks_ignored():
+    suspects = ["a"]
+    checks = [ws._BeatCheck(beat="a", dramatized=False),
+              ws._BeatCheck(beat="phantom", dramatized=True)]
+    assert ws._reconcile_beat_checks(suspects, checks) == ["a"]
+
+
+def test_confirm_dropped_beats_empty_suspects_no_call():
+    # empty input returns [] without touching the backend at all
+    assert ws.confirm_dropped_beats("some prose", []) == []
+
+
+def _backend_available() -> bool:
+    try:
+        from brain import chat
+        return bool(chat([{"role": "user", "content": "Reply with the single word: ok"}], max_tokens=16))
+    except Exception:
+        return False
+
+
+def test_confirm_dropped_beats_semantic_paraphrase_live():
+    import pytest
+    if not _backend_available():
+        pytest.skip("model backend unreachable")
+    prose = (
+        "Mara folded the useless survey maps into her coat pocket and let the dog lead, "
+        "his nose skimming the frost. By the reservoir gate he stopped dead, hackles up, "
+        "and she saw the fresh green paint smeared along the third bench slat."
+    )
+    suspects = [
+        "she abandons the maps, trusting her gut and Biscuit's nose instead",  # paraphrased: IS dramatized
+        "Leo confesses that he reported the collective to the council",         # genuinely absent
+    ]
+    kept = ws.confirm_dropped_beats(prose, suspects)
+    assert suspects[1] in kept, "genuinely absent beat must stay flagged"
+    assert suspects[0] not in kept, "paraphrased-but-present beat must be filtered out"
