@@ -284,10 +284,18 @@ def write_section(chapter: Chapter, section: Section, previous_text: str,
     # #36 — one optional, gated revision pass; addresses over-used phrases and
     # dropped beats via targeted line edits, never a full regeneration.
     if enable_revision_pass:
-        section_text = _postprocess(
+        # #97 — the revision output must itself be valid prose: a broken
+        # revision (observed live: a 58-word fragment) must never replace a
+        # good draft. Keep the draft and log when the revision comes back bad.
+        revised = _postprocess(
             _revise_prose(section_text, overused, dropped_beats)
         )
-        # recompute the log signals against the revised text
+        revision_defect = _invalid_prose_reason(revised, lo)
+        if revision_defect is None:
+            section_text = revised
+        elif generation_warning is None:
+            generation_warning = f"revision pass discarded ({revision_defect}); kept the draft"
+        # recompute the log signals against the (possibly revised) text
         overused = overused_ngrams(section_text, previous_text, NGRAM_REPEAT_THRESHOLD)
         dropped_beats = confirm_dropped_beats(
             section_text, find_dropped_beats(section, section_text)

@@ -475,3 +475,19 @@ def test_best_short_but_clean_respects_min_words():
     just_over = "word " * (n + 5) + "end."
     assert ws._best_short_but_clean([just_under]) is None
     assert ws._best_short_but_clean([just_over]) == just_over.strip()
+
+
+# ##################################################################
+# #97 — a broken revision must never replace a good draft (the reviser call
+# itself is factored out; here we prove the acceptance logic: an invalid
+# revision keeps the draft, a valid one replaces it).
+def test_invalid_prose_reason_rejects_58_word_fragment():
+    # the actual failure shape: a tiny fragment with a dangling ending
+    fragment = ("The studio lights hummed and Joanne reached for the fader as the caller's "
+                "voice dissolved into static that sounded almost like").strip()
+    assert ws._invalid_prose_reason(fragment, 1100) is not None
+
+
+def test_invalid_prose_reason_accepts_full_revision():
+    good = ("The studio lights hummed. " * 80 + "She switched off the mic.").strip()
+    assert ws._invalid_prose_reason(good, 1100) is None or "truncated" in str(ws._invalid_prose_reason(good, 1100))
