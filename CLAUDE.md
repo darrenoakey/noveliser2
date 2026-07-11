@@ -10,11 +10,15 @@ not wrapped). The process calls `setproctitle("noveliser2")`, so `pgrep -f "run 
 will NOT find it once running — pgrep `noveliser2` or capture `$!`.
 
 ## Model / backend routing
-- Text: `brain.py` calls daz-agent-sdk `agent.ask(tier=Tier.FREE_FAST)`. The active model is
-  set in `~/.daz-agent-sdk/config.yaml` — currently `boringstack:qwen3.6:35b-a3b` (a remote
-  Ollama box — DHCP-assigned IP, was 10.0.0.237, now 10.0.0.42; if unreachable check the
-  asus router's dnsmasq leases for "boringstack"). `chat`/`chat_structured` take an
-  optional `tier=` override.
+- Text: `brain.py` calls daz-agent-sdk `agent.ask(tier=Tier.FREE_FAST)` for structure and
+  `Tier.FREE_THINKING` for prose. Both tiers are set in `~/.daz-agent-sdk/config.yaml` and
+  now head with `arbiter:qwen3.6-35b` — the arbiter (spark, http://spark:8400) dispatches
+  the job to any of its registered placements (spark-ollama / boringstack / darrens-mbp),
+  so generation is machine-agnostic and survives any one box being down. Fallbacks:
+  direct `boringstack:qwen3.6:35b-a3b` (Ollama at 10.0.0.42 — DHCP; if unreachable check
+  the asus router's dnsmasq leases for "boringstack"), then localhost Ollama.
+  `chat`/`chat_structured` take an optional `tier=` override. Verified: plain, structured,
+  and thinking calls all return `model_used.provider == "arbiter"`.
 - Images: `generate_images.py` calls `agent.image()` (no provider) → codex provider.
 - Embeddings: `agent.embed()` → arbiter on spark (10.0.0.254). 768-dim.
 - The SDK is **editable-installed** in `.venv` (`python -m pip install -e ~/src/daz-agent-sdk
