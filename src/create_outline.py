@@ -1,5 +1,11 @@
 from brain import chat
-from craft import STRUCTURE_INSTRUCTION
+from craft import (
+    PLOT_WEAVE_INSTRUCTION,
+    STRUCTURE_INSTRUCTION,
+    render_character_arcs,
+    render_plot_stories,
+    render_plot_threads,
+)
 from models import Character
 
 
@@ -8,9 +14,18 @@ from models import Character
 # build a detailed story outline that fits the specified scope
 def create_outline(description: str, plot_type: str, themes: list[str],
                    characters: list[Character], num_chapters: int,
-                   sections_per_chapter: int) -> str:
+                   sections_per_chapter: int, plots=None, arcs=None) -> str:
     char_descriptions = "\n".join([f"- {c.name} ({c.role.value}): {c.biography}" for c in characters])
     total_sections = num_chapters * sections_per_chapter
+
+    plot_block = ""
+    if plots is not None:
+        plot_block = (
+            render_plot_stories(plots)
+            + render_plot_threads(plots)
+            + render_character_arcs(arcs)
+            + "\n" + PLOT_WEAVE_INSTRUCTION + "\n"
+        )
 
     if num_chapters == 1:
         scope = "This is a complete short story with a full beginning, middle, and end within a single chapter."
@@ -30,7 +45,7 @@ Characters:
 {char_descriptions}
 
 SCOPE: {scope}
-
+{plot_block}
 {STRUCTURE_INSTRUCTION}
 
 CRITICAL: This outline must contain a complete story arc with:
@@ -47,4 +62,4 @@ Return a compact planning outline only:
 
 Keep the whole response under 1200 words. The story should feel complete and satisfying at this length, not like a fragment or the beginning of a longer work."""},
     ]
-    return chat(messages, max_tokens=1536)
+    return chat(messages, max_tokens=2048)

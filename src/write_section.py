@@ -48,9 +48,11 @@ from brain import PROSE_TIER, TIER, chat
 from craft import (
     PROSE_CRAFT,
     render_canon_facts,
+    render_character_arcs,
     render_character_engine,
     render_character_voice,
     render_name_roster,
+    render_plot_threads,
     word_target_for_scene,
 )
 
@@ -136,6 +138,7 @@ def write_section(chapter: Chapter, section: Section, previous_text: str,
                   writing_style: WritingStyle, chapter_plan: ChapterPlan,
                   is_final_section: bool, ledger=None, prior_summaries: str = "",
                   prev_section_text: str = "", novel_dir: Path | None = None,
+                  plots=None, arcs=None,
                   enable_revision_pass: bool = ENABLE_REVISION_PASS) -> SectionResult:
     is_first = chapter.number == 1 and section.number == 1
     section_id = f"ch{chapter.number}.s{section.number}"
@@ -197,6 +200,11 @@ def write_section(chapter: Chapter, section: Section, previous_text: str,
     lo, hi = word_target_for_scene(section)  # #41
     pov_tense = _render_pov_tense(writing_style)  # #42
 
+    # compact plot-thread + trajectory blocks so the prose keeps every plot line
+    # live and lands each character where their arc says (not the full stories).
+    plot_block = render_plot_threads(plots)
+    arc_block = render_character_arcs(arcs)
+
     prompt_ctx = _PromptContext(
         chapter=chapter, section=section, writing_style=writing_style,
         all_chapters_summary=all_chapters_summary, position_note=position_note,
@@ -205,6 +213,7 @@ def write_section(chapter: Chapter, section: Section, previous_text: str,
         scene_directive=scene_directive, established_block=established_block,
         canon_block=canon_block, roster_block=roster_block,
         summary_block=summary_block, recap_block=recap_block,
+        plot_block=plot_block, arc_block=arc_block,
         pov_tense=pov_tense, word_lo=lo, word_hi=hi,
     )
 
@@ -278,8 +287,8 @@ class _PromptContext:
         "chapter", "section", "writing_style", "all_chapters_summary",
         "position_note", "previous_context", "character_block", "engine_block",
         "voice_block", "scene_directive", "established_block", "canon_block",
-        "roster_block", "summary_block", "recap_block", "pov_tense",
-        "word_lo", "word_hi",
+        "roster_block", "summary_block", "recap_block", "plot_block",
+        "arc_block", "pov_tense", "word_lo", "word_hi",
     )
 
     def __init__(self, **kw) -> None:
@@ -633,7 +642,7 @@ Chapter Closing: {ctx.chapter.closing_situation}
 
 SECTION: {ctx.section.number}
 Section Goal: {ctx.section.goal}
-Key Events: {ctx.section.key_events}{ctx.scene_directive}{ctx.canon_block}{ctx.roster_block}{ctx.summary_block}{ctx.established_block}{ctx.recap_block}{ctx.previous_context}
+Key Events: {ctx.section.key_events}{ctx.scene_directive}{ctx.plot_block}{ctx.arc_block}{ctx.canon_block}{ctx.roster_block}{ctx.summary_block}{ctx.established_block}{ctx.recap_block}{ctx.previous_context}
 
 Write approximately {ctx.word_lo}-{ctx.word_hi} words of narrative prose for this section.
 Maintain continuity with the cast, the CANON FACTS (which are fixed), the established details, and the previous text.

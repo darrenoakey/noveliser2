@@ -116,6 +116,44 @@ class CharactersList(BaseModel):
 
 
 # ##################################################################
+# plot
+# a single plot line written as a standalone short story
+class Plot(BaseModel):
+    name: str = Field(description="Short memorable name for this plot line")
+    kind: str = Field(default="subplot", description="'primary' for the main plot, 'subplot' otherwise")
+    premise: str = Field(default="", description="One-paragraph premise: who wants what, what stands in the way")
+    stakes: str = Field(default="", description="What is lost if this plot fails — concrete, personal")
+    characters_involved: list[str] = Field(default_factory=list, description="Exact names of characters driving this plot")
+    resolution: str = Field(default="", description="How this plot line ultimately resolves")
+    story: str = Field(default="", description="The plot written as a standalone short story")
+
+
+# ##################################################################
+# plot set
+# all plot lines for the novel; primary first, then subplots
+class PlotSet(BaseModel):
+    plots: list[Plot] = Field(default_factory=list, description="All plot lines; the primary plot first, then subplots")
+
+
+# ##################################################################
+# character arc
+# how a single character changes across the story
+class CharacterArc(BaseModel):
+    character: str = Field(description="Exact character name")
+    before: str = Field(default="", description="Who this character is at the story's start — state of mind, situation, defining behavior")
+    after: str = Field(default="", description="Who they are when the story ends — may be better, worse, or dead")
+    change_kind: str = Field(default="growth", description="One of: growth, decline, terminal, flat, corruption, redemption")
+    journey: str = Field(default="", description="How the plots force this change, step by step")
+
+
+# ##################################################################
+# character arcs
+# one arc per named character
+class CharacterArcs(BaseModel):
+    arcs: list[CharacterArc] = Field(default_factory=list, description="One arc per named character")
+
+
+# ##################################################################
 # writing style
 # defines the narrative voice and style for consistency
 class WritingStyle(BaseModel):

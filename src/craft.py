@@ -166,6 +166,153 @@ CRAFT RULES — write "unputdownable" prose:
 
 
 # ##################################################################
+# plot weave — braid all plot lines to resolution and land every arc
+# injected into the outline + chapter stages so the primary plot drives the
+# spine and every subplot advances then resolves, never simply vanishing.
+PLOT_WEAVE_INSTRUCTION = """\
+Braid the plot lines through the whole narrative:
+- The PRIMARY PLOT is the spine — it drives the inciting incident, midpoint, and
+  climax.
+- Every SUBPLOT must advance in the middle acts and RESOLVE by the end — no
+  subplot may simply vanish. A subplot may resolve before the climax, but its
+  resolution must matter to the primary plot or a character arc.
+- Interleave: no plot line should go untouched for long stretches; when a chapter
+  advances multiple plots, let them COLLIDE (a subplot scene complicates the
+  primary plot, not just sits beside it).
+- Character end-states must land exactly where the CHARACTER ARCS say — growth,
+  decline, or death as specified."""
+
+
+# ##################################################################
+# plot-line coercion helper
+# duck-type a Plot (pydantic instance OR checkpoint dict) into its fields.
+def _plot_field(p, attr: str, default: str = "") -> str:
+    if isinstance(p, dict):
+        val = p.get(attr, default)
+    else:
+        val = getattr(p, attr, default)
+    return (str(val).strip() if val is not None else "")
+
+
+# ##################################################################
+# arc coercion helper
+# duck-type a CharacterArc (pydantic instance OR checkpoint dict) into its fields.
+def _arc_field(a, attr: str, default: str = "") -> str:
+    if isinstance(a, dict):
+        val = a.get(attr, default)
+    else:
+        val = getattr(a, attr, default)
+    return (str(val).strip() if val is not None else "")
+
+
+def _plots_list(plots) -> list:
+    if plots is None:
+        return []
+    if isinstance(plots, dict):
+        return plots.get("plots", []) or []
+    inner = getattr(plots, "plots", None)
+    if inner is not None:
+        return inner
+    if isinstance(plots, list):
+        return plots
+    return []
+
+
+def _arcs_list(arcs) -> list:
+    if arcs is None:
+        return []
+    if isinstance(arcs, dict):
+        return arcs.get("arcs", []) or []
+    inner = getattr(arcs, "arcs", None)
+    if inner is not None:
+        return inner
+    if isinstance(arcs, list):
+        return arcs
+    return []
+
+
+def _plot_tag(p) -> str:
+    kind = _plot_field(p, "kind", "subplot").lower()
+    return "PRIMARY" if kind == "primary" else "SUBPLOT"
+
+
+# ##################################################################
+# render plot threads
+# compact one-bullet-per-plot block (primary tagged) for the outline + chapter +
+# section prompts. Accepts PlotSet, list[Plot], list[dict], or None; "" when empty.
+def render_plot_threads(plots) -> str:
+    items = _plots_list(plots)
+    lines: list[str] = []
+    for p in items:
+        name = _plot_field(p, "name")
+        if not name:
+            continue
+        premise = _plot_field(p, "premise")
+        stakes = _plot_field(p, "stakes")
+        resolution = _plot_field(p, "resolution")
+        parts = [f"- [{_plot_tag(p)}] {name}"]
+        if premise:
+            parts.append(f" — {premise}")
+        if stakes:
+            parts.append(f" (Stakes: {stakes})")
+        if resolution:
+            parts.append(f" (Resolves: {resolution})")
+        lines.append("".join(parts))
+    if not lines:
+        return ""
+    return (
+        "\n\nPLOT THREADS (advance and resolve ALL of these; the primary plot is "
+        "the spine):\n" + "\n".join(lines) + "\n"
+    )
+
+
+# ##################################################################
+# render character arcs
+# one-line-per-arc trajectory block (before → after [change_kind]) for the
+# outline + chapter + section prompts. Accepts CharacterArcs, list, or None.
+def render_character_arcs(arcs) -> str:
+    items = _arcs_list(arcs)
+    lines: list[str] = []
+    for a in items:
+        name = _arc_field(a, "character")
+        if not name:
+            continue
+        before = _arc_field(a, "before")
+        after = _arc_field(a, "after")
+        change_kind = _arc_field(a, "change_kind", "growth") or "growth"
+        lines.append(f"- {name}: {before} → {after} [{change_kind}]")
+    if not lines:
+        return ""
+    return (
+        "\n\nCHARACTER TRAJECTORIES (each character's on-page behavior must track "
+        "this journey; the change may be positive, negative, or fatal — honor "
+        "it):\n" + "\n".join(lines) + "\n"
+    )
+
+
+# ##################################################################
+# render plot stories
+# the full standalone stories block for the OUTLINE stage only. Each plot's
+# short-story text under a header. "" when empty or no stories are set.
+def render_plot_stories(plots) -> str:
+    items = _plots_list(plots)
+    blocks: list[str] = []
+    for p in items:
+        story = _plot_field(p, "story")
+        if not story:
+            continue
+        name = _plot_field(p, "name") or "(untitled)"
+        blocks.append(f"=== [{_plot_tag(p)}]: {name} ===\n{story}")
+    if not blocks:
+        return ""
+    return (
+        "\n\nPLOT STORIES (each plot line written as a standalone short story — the "
+        "outline must braid all of these together into one novel):\n\n"
+        + "\n\n".join(blocks) + "\n"
+    )
+
+
+# ##################################################################
 # render character engine
 # compact per-character Wound/Lie/Want/Need block for the prose prompt, so the
 # writer dramatizes each character's internal conflict on the page.

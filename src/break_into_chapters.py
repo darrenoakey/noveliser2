@@ -1,5 +1,10 @@
 from brain import chat_structured
-from craft import CHAPTER_HOOK_INSTRUCTION
+from craft import (
+    CHAPTER_HOOK_INSTRUCTION,
+    PLOT_WEAVE_INSTRUCTION,
+    render_character_arcs,
+    render_plot_threads,
+)
 from models import ChapterPlan, Character, EnhancedOutline
 
 
@@ -7,9 +12,18 @@ from models import ChapterPlan, Character, EnhancedOutline
 # break into chapters
 # divide the enhanced outline into detailed chapter plans
 def break_into_chapters(enhanced_outline: EnhancedOutline, characters: list[Character],
-                        themes: list[str], plot_type: str, num_chapters: int) -> ChapterPlan:
+                        themes: list[str], plot_type: str, num_chapters: int,
+                        plots=None, arcs=None) -> ChapterPlan:
     character_list = "\n".join([f"- {c.name} ({c.role.value}): {c.biography}" for c in characters])
     theme_list = ", ".join(themes)
+
+    plot_block = ""
+    if plots is not None:
+        plot_block = (
+            render_plot_threads(plots)
+            + render_character_arcs(arcs)
+            + "\n" + PLOT_WEAVE_INSTRUCTION + "\n"
+        )
     humor_text = "\n".join(f"- {h}" for h in enhanced_outline.humor_elements) if enhanced_outline.humor_elements else "None specified"
     romance_text = "\n".join(f"- {r}" for r in enhanced_outline.romance_elements) if enhanced_outline.romance_elements else "None specified"
 
@@ -32,7 +46,7 @@ HUMOR ELEMENTS:
 
 ROMANCE ELEMENTS:
 {romance_text}
-
+{plot_block}
 For each chapter, provide:
 1. TITLE: A compelling chapter title
 2. OPENING SITUATION: Where we are at the start (character states, plot situation, setting)
@@ -49,6 +63,12 @@ CRITICAL REQUIREMENTS:
 - Ensure proper story pacing and character development across all chapters
 - The final chapter must provide complete closure and resolution
 - No duplication across chapters
+- Each chapter's KEY EVENTS must EXPLICITLY advance at least one named plot thread
+  from the PLOT THREADS above (name the thread it moves)
+- Across all chapters, every plot thread must appear MULTIPLE times and RESOLVE by
+  the end — no thread may be introduced and then abandoned
+- Character changes across the chapters must PROGRESS toward each character's
+  trajectory endpoint in the CHARACTER TRAJECTORIES above (growth, decline, or death)
 
 Create exactly {num_chapters} chapters."""},
     ]

@@ -5,8 +5,8 @@ from pathlib import Path
 from colorama import Fore, Style
 
 from models import (
-    BookMetadata, BookStatus, Character, Chapter, ChapterPlan,
-    EnhancedOutline, Title, WritingStyle,
+    BookMetadata, BookStatus, Character, CharacterArc, CharacterArcs,
+    Chapter, ChapterPlan, EnhancedOutline, Plot, PlotSet, Title, WritingStyle,
 )
 from retrieval_memory import RetrievalMemory
 from record import record, reset_novel_dir, set_continue_mode, set_novel_dir, resolve_novel_dir
@@ -16,6 +16,8 @@ from determine_plot_type import determine_plot_type
 from select_themes import select_themes
 from create_characters import create_characters
 from create_outline import create_outline
+from create_plots import plan_plots, write_plot_story
+from character_arcs import create_character_arcs
 from enhance_outline import enhance_outline
 from define_writing_style import define_writing_style
 from break_into_chapters import break_into_chapters
@@ -102,10 +104,34 @@ def write_novel(description: str, output_dir: Path, num_chapters: int = 10,
                                lambda: create_characters(description, plot_type_str, theme_values), novel_dir)
     characters = _extract_characters(characters_result)
 
+    # step 4b: plan the plot lines (primary + subplots), then write each as a
+    # standalone short story, then derive each character's arc. These feed the
+    # outline/chapter/section stages so every thread braids and resolves and each
+    # character lands where their arc says.
+    plot_plan_result = record("Create plot plan",
+                              lambda: plan_plots(description, plot_type_str, theme_values,
+                                                 characters, num_chapters), novel_dir)
+    plots = _extract_plot_set(plot_plan_result)
+
+    for i, plot in enumerate(plots.plots, 1):
+        story_result = record(
+            f"Write plot story {i}",
+            lambda p=plot, prior=plots.plots[:i - 1]: {
+                "story": write_plot_story(p, prior, characters, description)
+            },
+            novel_dir,
+        )
+        plot.story = _extract_story(story_result)
+
+    arcs_result = record("Create character arcs",
+                         lambda: create_character_arcs(characters, plots), novel_dir)
+    arcs = _extract_character_arcs(arcs_result)
+
     # step 5: create outline
     outline_text = record("Create outline",
                           lambda: create_outline(description, plot_type_str, theme_values,
-                                                 characters, num_chapters, sections_per_chapter), novel_dir)
+                                                 characters, num_chapters, sections_per_chapter,
+                                                 plots=plots, arcs=arcs), novel_dir)
     if isinstance(outline_text, dict):
         outline_text = outline_text.get("outline", str(outline_text))
 
@@ -122,7 +148,8 @@ def write_novel(description: str, output_dir: Path, num_chapters: int = 10,
     # step 8: break into chapters
     chapter_plan_result = record(f"Break into {num_chapters} chapters",
                                  lambda: break_into_chapters(enhanced, characters, theme_values,
-                                                             plot_type_str, num_chapters), novel_dir)
+                                                             plot_type_str, num_chapters,
+                                                             plots=plots, arcs=arcs), novel_dir)
     chapter_plan = _extract_chapter_plan(chapter_plan_result)
 
     # step 9: cover image — adopt caller-supplied artwork verbatim, else generate
@@ -193,7 +220,7 @@ def write_novel(description: str, output_dir: Path, num_chapters: int = 10,
                        lg=ledger, ps=prior_summaries, prev=prev_section_text: write_section(
                     ch, sec, txt, mem, characters, writing_style, chapter_plan, is_final,
                     ledger=lg, prior_summaries=ps, prev_section_text=prev,
-                    novel_dir=novel_dir,
+                    novel_dir=novel_dir, plots=plots, arcs=arcs,
                 ),
                 novel_dir,
             )
@@ -294,6 +321,43 @@ def _extract_characters(result) -> list[Character]:
     if isinstance(result, dict):
         return [Character(**c) for c in result.get("characters", [])]
     return []
+
+
+# ##################################################################
+# extract plot set
+# handle both pydantic model and dict formats for the plot plan. On resume
+# record() returns a dict {"plots": [...]} — rebuild Plot objects (pydantic
+# handles the nested dicts) so downstream mutation of plot.story works.
+def _extract_plot_set(result) -> PlotSet:
+    if isinstance(result, PlotSet):
+        return result
+    if isinstance(result, dict):
+        plots = result.get("plots", [])
+        return PlotSet(plots=[Plot(**p) if isinstance(p, dict) else p for p in plots])
+    return PlotSet(plots=[])
+
+
+# ##################################################################
+# extract story
+# unwrap a per-plot story record() result (live dict or restored json)
+def _extract_story(result) -> str:
+    if isinstance(result, dict):
+        return str(result.get("story", "") or "")
+    if hasattr(result, "story"):
+        return str(result.story or "")
+    return str(result or "")
+
+
+# ##################################################################
+# extract character arcs
+# handle both pydantic model and dict formats for the character arcs
+def _extract_character_arcs(result) -> CharacterArcs:
+    if isinstance(result, CharacterArcs):
+        return result
+    if isinstance(result, dict):
+        arcs = result.get("arcs", [])
+        return CharacterArcs(arcs=[CharacterArc(**a) if isinstance(a, dict) else a for a in arcs])
+    return CharacterArcs(arcs=[])
 
 
 # ##################################################################
