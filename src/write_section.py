@@ -651,7 +651,13 @@ Output ONLY the story text. No headers, no commentary, no meta-text. Begin the n
 # revise prose (#36)
 # one bounded critique-and-line-edit pass. Requests TARGETED edits against a
 # short rubric (show-vs-tell, voice distinctness, cliché density, hook strength)
-# plus the specific over-used phrases and dropped beats — never a full rewrite.
+# plus the specific over-used phrases and dropped beats — never a full rewrite
+# of the scene's existing content, but restoring a missing planned beat
+# necessarily means ADDING material, so that exception is stated explicitly
+# rather than left to collide with the general "don't change events" rule (an
+# earlier version of this prompt banned changing events unconditionally, which
+# silently defeated the dropped-beats weave-in instruction below it — measured
+# on a real test novel: beats stayed missing after the pass every time).
 def _revise_prose(draft: str, overused: list[str],
                   dropped_beats: list[str]) -> str:
     notes = []
@@ -659,15 +665,26 @@ def _revise_prose(draft: str, overused: list[str],
         notes.append("Replace these over-used phrases with fresh, specific images: "
                      + "; ".join(overused) + ".")
     if dropped_beats:
-        notes.append("These planned beats look missing — weave them in naturally: "
-                     + "; ".join(dropped_beats) + ".")
+        notes.append(
+            "These planned beats are MISSING from the draft — you MUST add the material "
+            "needed to include them (new sentences or a short new paragraph, inserted where "
+            "they fit the scene's flow), not merely reword existing text: "
+            + "; ".join(dropped_beats) + "."
+        )
     extra_notes = ("\n" + "\n".join(notes)) if notes else ""
 
+    events_rule = (
+        "You do NOT rewrite the scene wholesale or discard its existing events — preserve "
+        "the plot, POV, and structure of what's already there."
+        if not dropped_beats else
+        "You do NOT rewrite the scene wholesale or discard any of its existing events — "
+        "preserve the plot, POV, and structure of what's already there. The one exception: "
+        "the MISSING PLANNED BEATS listed below must be added, even though that means the "
+        "section will grow — that addition is required, not optional polish."
+    )
     system_content = (
         "You are a line editor improving a draft section of a novel. You make TARGETED "
-        "line edits only — you do NOT rewrite the scene wholesale, change its events, or "
-        "alter its length materially. Preserve the plot, POV, and structure. Output ONLY "
-        "the edited prose, no commentary.\n\n"
+        f"edits only — {events_rule} Output ONLY the edited prose, no commentary.\n\n"
         + PROSE_CRAFT
     )
     user_content = (
