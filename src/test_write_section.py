@@ -449,3 +449,29 @@ def test_confirm_dropped_beats_semantic_paraphrase_live():
     kept = ws.confirm_dropped_beats(prose, suspects)
     assert suspects[1] in kept, "genuinely absent beat must stay flagged"
     assert suspects[0] not in kept, "paraphrased-but-present beat must be filtered out"
+
+
+# ##################################################################
+# #96 — short-but-clean salvage: under-length prose with a clean ending is
+# kept (and logged) instead of killing the run; hard defects never salvage.
+def test_best_short_but_clean_picks_longest_clean_attempt():
+    short_clean = "She closed the door. " * 20 + "It was done."          # ~101 words
+    longer_clean = "The road unspooled ahead of them. " * 60 + "Home."   # ~361 words
+    dirty = "He reached for the handle and then the"                     # mid-sentence
+    got = ws._best_short_but_clean([short_clean, longer_clean, dirty])
+    assert got == longer_clean.strip()
+
+
+def test_best_short_but_clean_rejects_meta_and_dirty_and_tiny():
+    meta = "1.  **Analyze User Input:**\n   - **POV/Tense:** third person."
+    dirty = ("A perfectly reasonable scene that stops mid-clause with a bare " * 20)[:-1] + " and,"
+    tiny = "Too small to be a scene."
+    assert ws._best_short_but_clean([meta, dirty, tiny, ""]) is None
+
+
+def test_best_short_but_clean_respects_min_words():
+    n = ws._SALVAGE_MIN_WORDS
+    just_under = "word " * (n - 2) + "end."
+    just_over = "word " * (n + 5) + "end."
+    assert ws._best_short_but_clean([just_under]) is None
+    assert ws._best_short_but_clean([just_over]) == just_over.strip()

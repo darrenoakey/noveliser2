@@ -225,21 +225,38 @@ def write_section(chapter: Chapter, section: Section, previous_text: str,
     # #91/#93 — reasoning-tier model returned planning notes or a mid-sentence
     # truncation instead of a finished story. Bounded: one same-tier retry with
     # a reinforced instruction, then one fallback-tier retry on the reliable
-    # non-reasoning TIER. If it's still invalid, raise — never save broken text
-    # as the novel's text.
+    # non-reasoning TIER. Hard defects (planning notes, empty, mid-sentence
+    # cut-offs) still raise — never save broken text as the novel's text. But a
+    # CLEAN-ENDED section that is merely short of its word target after all
+    # retries is a quality blemish, not corruption: keep the longest clean
+    # attempt and log it, rather than killing a multi-hour run (#96 — observed
+    # live: a section came back complete-but-455-words three times and the old
+    # strict guard aborted the whole novel).
+    generation_warning = None
     defect = _invalid_prose_reason(section_text, lo)
     if defect:
+        attempts = [section_text]
         section_text = _postprocess(_generate_prose(prompt_ctx, _INVALID_PROSE_RETRY_INSTRUCTION))
         defect = _invalid_prose_reason(section_text, lo)
         if defect:
+            attempts.append(section_text)
             section_text = _postprocess(
                 _generate_prose(prompt_ctx, _INVALID_PROSE_RETRY_INSTRUCTION, tier=TIER)
             )
             defect = _invalid_prose_reason(section_text, lo)
             if defect:
-                raise ValueError(
-                    f"section {section_id}: {defect} after two retries "
-                    "(including a non-reasoning-tier fallback)"
+                attempts.append(section_text)
+                salvage = _best_short_but_clean(attempts)
+                if salvage is None:
+                    raise ValueError(
+                        f"section {section_id}: {defect} after two retries "
+                        "(including a non-reasoning-tier fallback)"
+                    )
+                section_text = salvage
+                generation_warning = (
+                    f"section accepted under-length after two retries: "
+                    f"{len(salvage.split())} words vs {lo}-word target floor "
+                    "(clean ending, no meta leakage)"
                 )
 
     # #16 — near-duplicate guard, bounded to EXACTLY one retry.
@@ -278,7 +295,8 @@ def write_section(chapter: Chapter, section: Section, previous_text: str,
 
     if ENABLE_DRIFT_LOG:
         _log_continuity_warnings(
-            novel_dir, section_id, dedup_warning, overused, dropped_beats
+            novel_dir, section_id, dedup_warning, overused, dropped_beats,
+            generation_warning=generation_warning,
         )
 
     # #76 — populate new_facts for real from the ledger extraction.
@@ -550,14 +568,17 @@ def _extract_facts(ledger, text: str, known_entities: list[str], section_id: str
 # section. Best-effort — never raises into the pipeline.
 def _log_continuity_warnings(novel_dir: Path | None, section_id: str,
                              dedup_warning: str | None, overused: list[str],
-                             dropped_beats: list[str]) -> None:
+                             dropped_beats: list[str],
+                             generation_warning: str | None = None) -> None:
     if novel_dir is None:
         return
-    if not (dedup_warning or overused or dropped_beats):
+    if not (dedup_warning or overused or dropped_beats or generation_warning):
         return
     entry: dict[str, str | list[str]] = {"section": section_id}
     if dedup_warning:
         entry["near_duplicate"] = dedup_warning
+    if generation_warning:
+        entry["generation"] = generation_warning
     if overused:
         entry["overused_phrases"] = overused
     if dropped_beats:
@@ -874,6 +895,34 @@ def _looks_truncated(text: str, word_lo: int) -> bool:
     if len(stripped.split()) < word_lo * 0.5:
         return True
     return stripped[-1] not in _CLEAN_ENDING_CHARS
+
+
+# ##################################################################
+# best short-but-clean attempt (#96)
+# from the guard's failed attempts, pick the longest one whose ONLY problem is
+# being under the word target: it must end cleanly, contain no meta
+# commentary, and carry enough substance to be a real (if short) scene.
+# Returns None when every attempt has a hard defect.
+_SALVAGE_MIN_WORDS = 300
+
+
+def _best_short_but_clean(attempts: list[str]) -> str | None:
+    best = None
+    best_words = 0
+    for text in attempts:
+        stripped = (text or "").strip()
+        if not stripped:
+            continue
+        if _looks_like_meta_commentary(stripped):
+            continue
+        if stripped[-1] not in _CLEAN_ENDING_CHARS:
+            continue
+        words = len(stripped.split())
+        if words < _SALVAGE_MIN_WORDS:
+            continue
+        if words > best_words:
+            best, best_words = stripped, words
+    return best
 
 
 # ##################################################################
