@@ -216,3 +216,31 @@ def test_create_character_arcs_live():
     # full coverage guaranteed by the backfill
     assert "mara" in names
     assert "ivo" in names
+
+
+# ##################################################################
+# competition-grade standalone story (live; slow — one full PROSE_TIER story)
+def test_write_plot_story_is_competition_length_standalone_live():
+    if not BACKEND_OK:
+        pytest.skip("model backend unreachable")
+    from create_plots import STORY_WORD_LO, write_plot_story
+    from models import CharacterRole
+
+    cast = [
+        Character(name="Nell Harker", biography="A tide-pool ecologist who charts the reef alone since her brother drowned.", role=CharacterRole.PROTAGONIST, traits=["stubborn", "observant"]),
+        Character(name="Joan Mercer", biography="The harbourmaster who signs the storm warnings nobody reads.", role=CharacterRole.SUPPORTING, traits=["dry", "dutiful"]),
+    ]
+    plot = Plot(
+        name="The Ninth Wave",
+        kind="primary",
+        premise="Nell finds her brother's lost dive slate wedged in the reef the day a king tide is due, and has one falling tide to reach it.",
+        stakes="The slate — his last message — will be ground to powder by the king tide.",
+        characters_involved=["Nell Harker", "Joan Mercer"],
+        resolution="Nell reaches the slate, reads his final joke, and lets the sea keep the slate but not the words.",
+    )
+    story = write_plot_story(plot, [], cast, "A windswept coastal town where the sea gives and takes.")
+    words = len(story.split())
+    assert words >= int(STORY_WORD_LO * 0.5), f"story too short to be a real short story: {words} words"
+    assert story.strip()[-1] in ".!?\"”’)—…", "story must end cleanly"
+    head = story[:800].lower()
+    assert "analyze user input" not in head and "pov/tense" not in head

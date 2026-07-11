@@ -3,14 +3,34 @@
 A novel is built from one PRIMARY plot (the protagonist-driven central conflict)
 plus a handful of SUBPLOTS anchored to other character relationships and thematic
 angles. This module first plans all plot lines in a single structured call, then
-writes each one as a complete, satisfying STANDALONE short story — sequentially,
-each new story aware of every story already written so they share one consistent
-world (same names, relationships, physical facts, timeline). The result is a set
-of interlocking plot stories that later pipeline stages weave into the novel.
+writes each one as a complete STANDALONE short story — the Anne McCaffrey model:
+first the short stories, then the novel fleshes them out. Each story must be
+good enough to hand into a story-writing competition on its own: a real hook,
+escalating conflict, a satisfying ending, and NO hint that it belongs to
+something bigger. Stories are written sequentially, each aware of every story
+already written so they share one consistent world (same names, relationships,
+physical facts, timeline) — but consistency must never make a story depend on
+the others to be understood.
 """
 
-from brain import chat, chat_structured
+from brain import PROSE_TIER, TIER, chat, chat_structured
+from craft import PROSE_CRAFT, render_character_voice
 from models import Character, Plot, PlotSet
+from write_section import _invalid_prose_reason, _postprocess
+
+# a competition-shaped short story: long enough for a full arc, short enough
+# for one generation. The invalid-prose guard's floor is half the low bound.
+STORY_WORD_LO = 1800
+STORY_WORD_HI = 2600
+
+_STORY_RETRY_INSTRUCTION = (
+    "\n\nCRITICAL: Your previous response was invalid — either your own "
+    "planning/analysis notes (headers, numbered lists, labels) instead of a story, "
+    "or it stopped abruptly mid-sentence far short of the target length. Do not "
+    "repeat that mistake. Output ONLY complete, flowing narrative prose at the "
+    "requested length, and finish every sentence and the story itself before "
+    "stopping."
+)
 
 
 # ##################################################################
@@ -69,6 +89,10 @@ def plan_plots(
         f"- {n_sub} plot(s) with kind=\"subplot\": each anchored to a DIFFERENT character "
         "relationship or thematic angle, and each must intersect the primary plot at "
         "least once.\n\n"
+        "EVERY plot line must be conceived as a story strong enough to STAND "
+        "COMPLETELY ALONE — a premise with its own beginning, escalation, and "
+        "satisfying ending that could win a short-story competition by itself, "
+        "never a mere thread that only makes sense inside the novel.\n\n"
         "For EVERY plot provide:\n"
         "- name: a short memorable name.\n"
         "- premise: one paragraph — who wants what, and what stands in the way.\n"
@@ -115,39 +139,113 @@ def write_plot_story(
         )
     prior_str = "\n\n".join(prior_blocks)
 
+    voices = [render_character_voice(c) for c in relevant]
+    voice_lines = "\n".join(v for v in voices if v)
+    voice_block = f"\nCHARACTER VOICES (keep each distinct):\n{voice_lines}\n" if voice_lines else ""
+
     system = (
-        "You are a fiction writer producing a complete standalone short story. "
-        "The story must be genuinely interesting in itself: a hook opening, "
-        "escalating conflict, and a real resolution. Write 600-1000 words of prose "
-        "only — no title, no headers, no commentary."
+        "You are an award-winning short-story writer. You are producing a COMPLETE, "
+        "SELF-CONTAINED short story good enough to submit to a story-writing "
+        "competition as-is. Requirements:\n"
+        "- A hook opening that earns attention within the first two sentences.\n"
+        "- Escalating conflict through the middle — every scene raises the cost.\n"
+        "- A genuinely satisfying ENDING that resolves the story's own question. The "
+        "reader must close it feeling they read a whole story, not an excerpt.\n"
+        "- ZERO hints that this belongs to anything bigger: no unresolved threads, no "
+        "cliffhangers, no references a reader without other context wouldn't follow, "
+        "no sequel bait.\n"
+        "- Entertaining, immersive prose a competition judge would rank highly.\n\n"
+        + PROSE_CRAFT
+        + f"\n\nWrite {STORY_WORD_LO}-{STORY_WORD_HI} words of prose only — no title, "
+        "no headers, no commentary."
     )
     parts = [
-        f"OVERALL NOVEL (for tone only):\n{description}\n",
-        "PLOT LINE TO WRITE AS A STORY:\n"
-        f"Name: {plot.name}\n"
+        f"SETTING / WORLD (for flavor only — the story must stand alone):\n{description}\n",
+        "THE STORY TO WRITE:\n"
+        f"Name (do not print it): {plot.name}\n"
         f"Premise: {plot.premise}\n"
         f"Stakes: {plot.stakes}\n"
         f"Characters involved: {', '.join(plot.characters_involved)}\n"
-        f"Resolution (the story must end here): {plot.resolution}\n",
-        f"RELEVANT CHARACTERS:\n{char_lines}\n",
+        f"Resolution (the ending must land here, fully resolved): {plot.resolution}\n",
+        f"CHARACTERS:\n{char_lines}\n{voice_block}",
     ]
     if prior_str:
         parts.append(prior_str + "\n")
         parts.append(
-            "This story SHARES its world and characters with the plot line(s) "
-            "already written above. Nothing may contradict them — names, "
-            "relationships, physical facts, and timeline must all agree. Where a "
-            "character appears in more than one story, they must feel like the exact "
-            "same person.\n"
+            "This story SHARES its world and characters with the story/stories above. "
+            "Nothing may contradict them — names, relationships, physical facts, and "
+            "timeline must all agree; a character appearing in more than one story "
+            "must feel like the exact same person. BUT consistency must never create "
+            "dependence: this story must read as complete and fully understandable to "
+            "someone who has never seen the others.\n"
         )
     parts.append(
-        "Write the story now: 600-1000 words, prose only, ending on the stated "
-        "resolution."
+        f"Write the story now: {STORY_WORD_LO}-{STORY_WORD_HI} words, prose only, a "
+        "complete standalone story ending on the stated resolution."
     )
     user = "\n".join(parts)
 
-    result = chat(
-        [{"role": "system", "content": system}, {"role": "user", "content": user}],
-        max_tokens=2400,
+    def _valid(raw: str) -> bool:
+        return _invalid_prose_reason(_postprocess(raw), STORY_WORD_LO) is None
+
+    def _generate(extra: str, tier) -> str:
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user + extra},
+        ]
+        return _postprocess(chat(messages, max_tokens=4096, tier=tier, validate=_valid))
+
+    # draft on the escalated prose tier, with the same bounded retry/fallback
+    # discipline as section prose: one reinforced same-tier retry, one
+    # non-reasoning-tier fallback, then fail loudly — never keep broken text.
+    story = _generate("", PROSE_TIER)
+    defect = _invalid_prose_reason(story, STORY_WORD_LO)
+    if defect:
+        story = _generate(_STORY_RETRY_INSTRUCTION, PROSE_TIER)
+        defect = _invalid_prose_reason(story, STORY_WORD_LO)
+        if defect:
+            story = _generate(_STORY_RETRY_INSTRUCTION, TIER)
+            defect = _invalid_prose_reason(story, STORY_WORD_LO)
+            if defect:
+                raise ValueError(f"plot story '{plot.name}': {defect} after two retries")
+
+    return _revise_story(story).strip()
+
+
+# ##################################################################
+# revise story
+# one bounded competition-polish pass: critique-and-edit against a standalone
+# short-story rubric. Never a wholesale rewrite; falls back to the draft when
+# the revision itself comes back broken.
+def _revise_story(draft: str) -> str:
+    floor = max(1, len(draft.split()) // 2)
+
+    def _valid(raw: str) -> bool:
+        return _invalid_prose_reason(_postprocess(raw), floor) is None
+
+    system = (
+        "You are a short-story competition judge turned line editor. You make "
+        "TARGETED edits to the story below — you do NOT rewrite it wholesale or "
+        "change its events. Output ONLY the edited story, no commentary.\n\n"
+        + PROSE_CRAFT
     )
-    return result.strip()
+    user = (
+        "Edit this story so it would score at the top of a competition:\n"
+        "- HOOK: the first two sentences must seize attention.\n"
+        "- COMPLETENESS: the ending must resolve the story's own question fully — "
+        "remove or resolve any dangling thread, cliffhanger, or outward reference "
+        "that assumes context a standalone reader lacks.\n"
+        "- SHOW don't TELL, cut clichés, sharpen dialogue (see craft rules above).\n\n"
+        f"STORY:\n{draft}\n\n"
+        "Output the edited story now, and nothing else."
+    )
+    try:
+        revised = _postprocess(chat(
+            [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            max_tokens=4096, tier=PROSE_TIER, validate=_valid,
+        ))
+    except Exception:
+        return draft
+    if _invalid_prose_reason(revised, floor):
+        return draft
+    return revised
