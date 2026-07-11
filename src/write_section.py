@@ -722,7 +722,11 @@ Output ONLY the story text. No headers, no commentary, no meta-text. Begin the n
         {"role": "system", "content": system_content},
         {"role": "user", "content": user_content},
     ]
-    return chat(messages, max_tokens=2400, tier=tier)
+    # #95 — cache guard: never cache (and never trust a cached) response that
+    # is planning notes or a truncation. Without this, one bad generation
+    # poisons brain.py's content-hash cache and every resume replays it.
+    return chat(messages, max_tokens=2400, tier=tier,
+                validate=lambda raw: _invalid_prose_reason(_postprocess(raw), ctx.word_lo) is None)
 
 
 # ##################################################################
@@ -779,7 +783,12 @@ def _revise_prose(draft: str, overused: list[str],
         {"role": "system", "content": system_content},
         {"role": "user", "content": user_content},
     ]
-    return chat(messages, max_tokens=2400, tier=PROSE_TIER)
+    # #95 — same cache guard as _generate_prose: a revised section must still
+    # be prose, not planning notes; use half the draft's length as the floor
+    # (a line-edit shouldn't shrink the section drastically).
+    floor = max(1, len(draft.split()) // 2)
+    return chat(messages, max_tokens=2400, tier=PROSE_TIER,
+                validate=lambda raw: _invalid_prose_reason(_postprocess(raw), floor) is None)
 
 
 # ##################################################################

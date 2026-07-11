@@ -2,7 +2,7 @@ import asyncio
 import hashlib
 import json
 from pathlib import Path
-from typing import Type, TypeVar
+from typing import Callable, Type, TypeVar
 
 from daz_agent_sdk import agent, Tier
 from pydantic import BaseModel
@@ -63,12 +63,24 @@ def _split_messages(messages: list[dict[str, str]]) -> tuple[str, str]:
     return "\n\n".join(system_parts), "\n\n".join(user_parts)
 
 
-def chat(messages: list[dict[str, str]], max_tokens: int = 4096, tier: Tier = TIER) -> str:
+def chat(messages: list[dict[str, str]], max_tokens: int = 4096, tier: Tier = TIER,
+         validate: Callable[[str], bool] | None = None) -> str:
+    """Chat with content-hash caching.
+
+    `validate` guards the cache in both directions: a cached response that
+    fails it is treated as a miss and regenerated (self-healing — a bad
+    response cached by an earlier run would otherwise be served forever for
+    these exact inputs), and a fresh response that fails it is returned to
+    the caller (whose own retry logic handles it) but NEVER cached, so one
+    bad generation can't poison every future run.
+    """
     selector = f"tier:{tier.value}"
     hash_key = _hash_input(messages, selector, extra=f"max_tokens:{max_tokens}")
     cached = _load_from_cache(hash_key)
     if cached:
-        return cached["output"]
+        output = cached["output"]
+        if validate is None or validate(output):
+            return output
 
     system_prompt, user_prompt = _split_messages(messages)
 
@@ -80,8 +92,9 @@ def chat(messages: list[dict[str, str]], max_tokens: int = 4096, tier: Tier = TI
     if not result:
         raise ValueError("Agent returned empty response")
 
-    cache_inputs = {"messages": messages, "tier": tier.value, "max_tokens": max_tokens}
-    _save_to_cache(hash_key, cache_inputs, result)
+    if validate is None or validate(result):
+        cache_inputs = {"messages": messages, "tier": tier.value, "max_tokens": max_tokens}
+        _save_to_cache(hash_key, cache_inputs, result)
     return result
 
 
