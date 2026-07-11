@@ -68,7 +68,10 @@ retries once same-tier, once on the non-reasoning tier, then raises. A near-dupl
 guard retries once on section-vs-previous similarity. `_revise_prose` (ON by default)
 fixes overused phrases and MUST-ADD missing planned beats — its carve-out wording is
 load-bearing: a blanket "don't change events" instruction silently defeats the
-weave-in request. `retrieval_memory._embed` retries transient arbiter failures.
+weave-in request. Dropped-beat detection is two-stage: keyword prefilter
+(`find_dropped_beats`) then semantic confirmation (`confirm_dropped_beats`, one
+FAST-tier call) because keyword overlap cannot tell a dropped beat from a
+paraphrased one. `retrieval_memory._embed` retries transient arbiter failures.
 
 ## Worktree gotcha
 Git worktrees of this repo have NO `.venv`; `./run` only self-activates when `.venv`
