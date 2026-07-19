@@ -1,18 +1,20 @@
+import hashlib
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
+from uuid import uuid4
 
+from daz_agent_sdk import Capability, ImageResult, ModelInfo, Tier
 from PIL import Image
 import pytest
 
 from generate_images import (
     LEGACY_IMAGE_BACKENDS,
-    _image_request_hash,
-    _load_pending_image_job,
-    _pending_image_job_path,
-    _save_pending_image_job,
+    _image_idempotency_key,
+    _image_operation_state_path,
+    _validate_image_result,
     use_cover_image,
     validate_image_backend,
 )
@@ -76,20 +78,125 @@ def test_arbiter_process_cannot_submit_image_job(tmp_path: Path) -> None:
     assert not output_path.exists()
 
 
-def test_pending_durable_image_job_survives_restart_and_matches_exact_request(
-    tmp_path: Path,
-) -> None:
+def test_image_identity_is_deterministic_for_exact_request_and_output(tmp_path: Path) -> None:
     output_path = tmp_path / "chapter.jpg"
-    request_hash = _image_request_hash("misty forest", 1200, 400)
-    _save_pending_image_job(output_path, request_hash, "durable-job-17")
-
-    assert _load_pending_image_job(output_path, request_hash) == "durable-job-17"
-    assert (
-        _load_pending_image_job(
-            output_path, _image_request_hash("changed forest", 1200, 400)
-        )
-        is None
+    first = _image_idempotency_key("misty forest", 1200, 400, output_path)
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys; from pathlib import Path; "
+                "sys.path.insert(0, sys.argv[1]); "
+                "from generate_images import _image_idempotency_key; "
+                "print(_image_idempotency_key(sys.argv[2], 1200, 400, Path(sys.argv[3])))"
+            ),
+            str(Path(__file__).resolve().parent),
+            "misty forest",
+            str(output_path),
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=True,
     )
-    record = _pending_image_job_path(output_path)
-    assert json.loads(record.read_text())["job_id"] == "durable-job-17"
-    assert not record.with_suffix(record.suffix + ".new").exists()
+    assert completed.stdout.strip() == first
+    assert _image_idempotency_key("changed forest", 1200, 400, output_path) != first
+    assert _image_idempotency_key("misty forest", 1200, 400, tmp_path / "other.jpg") != first
+    expected_state = tmp_path / f"chapter.jpg.image-operation-{first[11:]}.json"
+    assert _image_operation_state_path(output_path, first) == expected_state
+    changed = _image_idempotency_key("changed forest", 1200, 400, output_path)
+    assert _image_operation_state_path(output_path, changed) != _image_operation_state_path(output_path, first)
+
+
+def test_completed_codex_operation_validates_exact_identity_and_artifact(tmp_path: Path) -> None:
+    output_path = (tmp_path / "chapter.jpg").absolute()
+    Image.new("RGB", (120, 40), (20, 80, 140)).save(output_path, "JPEG")
+    prompt = "misty forest"
+    key = _image_idempotency_key(prompt, 120, 40, output_path)
+    state_path = _image_operation_state_path(output_path, key)
+    operation_id = hashlib.sha256(b"idempotency-key\0" + key.encode()).hexdigest()
+    state_path.write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "operation_id": operation_id,
+                "idempotency_key": key,
+                "request_body": json.dumps(
+                    {"prompt": prompt, "width": 120, "height": 40, "transparent": False},
+                    separators=(",", ":"),
+                ),
+                "output_intent": f"path:{output_path}",
+                "output_path": str(output_path),
+                "output_format": "jpeg",
+                "transparent": False,
+                "job_id": "durable-job-17",
+            }
+        )
+    )
+    model = ModelInfo(
+        provider="codex",
+        model_id="codex-image-generation",
+        display_name="Codex Image Generation",
+        capabilities=frozenset({Capability.IMAGE}),
+        tier=Tier.HIGH,
+    )
+    result = ImageResult(
+        path=output_path,
+        model_used=model,
+        conversation_id=uuid4(),
+        prompt=prompt,
+        width=120,
+        height=40,
+        job_id="durable-job-17",
+        status="done",
+        ready=True,
+        provider="codex",
+        idempotency_key=key,
+    )
+
+    _validate_image_result(
+        result,
+        prompt=prompt,
+        width=120,
+        height=40,
+        output_path=output_path,
+        operation_state=state_path,
+        idempotency_key=key,
+    )
+
+    Image.new("RGB", (120, 40), (20, 80, 140)).save(output_path, "PNG")
+    with pytest.raises(RuntimeError, match=r"returned PNG \(120, 40\), expected JPEG"):
+        _validate_image_result(
+            result,
+            prompt=prompt,
+            width=120,
+            height=40,
+            output_path=output_path,
+            operation_state=state_path,
+            idempotency_key=key,
+        )
+
+    Image.new("RGB", (121, 40), (20, 80, 140)).save(output_path, "JPEG")
+    with pytest.raises(RuntimeError, match=r"returned JPEG \(121, 40\), expected JPEG \(120, 40\)"):
+        _validate_image_result(
+            result,
+            prompt=prompt,
+            width=120,
+            height=40,
+            output_path=output_path,
+            operation_state=state_path,
+            idempotency_key=key,
+        )
+
+    output_path.write_bytes(b"not an image")
+    with pytest.raises(RuntimeError, match="undecodable JPEG artifact"):
+        _validate_image_result(
+            result,
+            prompt=prompt,
+            width=120,
+            height=40,
+            output_path=output_path,
+            operation_state=state_path,
+            idempotency_key=key,
+        )

@@ -3,8 +3,8 @@ import hashlib
 import json
 from pathlib import Path
 
-from daz_agent_sdk import agent, resume_image_job
-from PIL import Image
+from daz_agent_sdk import ImageResult, agent
+from PIL import Image, UnidentifiedImageError
 
 from backend import get_backend
 
@@ -90,78 +90,123 @@ def _run_generate_image(
     prompt: str, output_path: Path, width: int, height: int
 ) -> None:
     validate_image_backend(get_backend())
-    request_hash = _image_request_hash(prompt, width, height)
-    job_id = _load_pending_image_job(output_path, request_hash)
-    if job_id:
-        result = asyncio.run(resume_image_job(job_id, output_path, timeout=900))
-    else:
-        result = asyncio.run(
-            agent.image(
-                prompt,
-                width=width,
-                height=height,
-                output=str(output_path),
-                timeout=900,
-            )
+    output_path = output_path.expanduser().absolute()
+    idempotency_key = _image_idempotency_key(prompt, width, height, output_path)
+    operation_state = _image_operation_state_path(output_path, idempotency_key)
+    result = asyncio.run(
+        agent.image(
+            prompt,
+            width=width,
+            height=height,
+            output=output_path,
+            timeout=None,
+            idempotency_key=idempotency_key,
+            operation_state=operation_state,
         )
-    if not result.ready:
-        _save_pending_image_job(output_path, request_hash, result.job_id)
-        raise RuntimeError(
-            f"Mac mini Codex image job {result.job_id} remains durable "
-            f"with status {result.status}; resume that job instead of resubmitting"
-        )
-    if not output_path.is_file() or output_path.stat().st_size == 0:
-        raise RuntimeError(
-            f"Mac mini Codex image job {result.job_id} completed without a non-empty output"
-        )
-    _pending_image_job_path(output_path).unlink(missing_ok=True)
+    )
+    _validate_image_result(
+        result,
+        prompt=prompt,
+        width=width,
+        height=height,
+        output_path=output_path,
+        operation_state=operation_state,
+        idempotency_key=idempotency_key,
+    )
 
 
 # ##################################################################
-# image request hash
-# identifies the exact output request so a changed prompt can start a new job
-def _image_request_hash(prompt: str, width: int, height: int) -> str:
+# image idempotency key
+# binds one durable service job to the exact request and absolute artifact path
+def _image_idempotency_key(
+    prompt: str, width: int, height: int, output_path: Path
+) -> str:
     encoded = json.dumps(
-        {"prompt": prompt, "width": width, "height": height},
+        {
+            "height": height,
+            "output_path": str(output_path.expanduser().absolute()),
+            "prompt": prompt,
+            "transparent": False,
+            "width": width,
+        },
         sort_keys=True,
         separators=(",", ":"),
     ).encode()
-    return hashlib.sha256(encoded).hexdigest()
+    return f"noveliser2-{hashlib.sha256(encoded).hexdigest()}"
 
 
 # ##################################################################
-# pending image job path
-# keeps durable state beside the intended artifact across process restarts
-def _pending_image_job_path(output_path: Path) -> Path:
-    return output_path.with_name(output_path.name + ".igs-job.json")
+# image operation state path
+# gives the SDK one stable crash-safe state file for this exact artifact
+def _image_operation_state_path(output_path: Path, idempotency_key: str) -> Path:
+    identity = idempotency_key.removeprefix("noveliser2-")
+    return output_path.with_name(f"{output_path.name}.image-operation-{identity}.json")
 
 
 # ##################################################################
-# save pending image job
-# atomically persists the durable id before returning a non-ready result
-def _save_pending_image_job(output_path: Path, request_hash: str, job_id: str) -> None:
-    if not job_id.strip():
-        message = "Mac mini Codex image service returned no durable job id"
-        raise RuntimeError(message)
-    path = _pending_image_job_path(output_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".new")
-    temporary.write_text(json.dumps({"job_id": job_id, "request_hash": request_hash}))
-    temporary.replace(path)
+# validate image result
+# proves the durable Codex identity and fully decodes the exact requested artifact
+def _validate_image_result(
+    result: ImageResult,
+    *,
+    prompt: str,
+    width: int,
+    height: int,
+    output_path: Path,
+    operation_state: Path,
+    idempotency_key: str,
+) -> None:
+    expected_path = output_path.expanduser().absolute()
+    state = json.loads(operation_state.read_text())
+    request = json.loads(state.get("request_body", "null"))
+    expected_request = {
+        "prompt": prompt,
+        "width": width,
+        "height": height,
+        "transparent": False,
+    }
+    expected_operation_id = hashlib.sha256(b"idempotency-key\0" + idempotency_key.encode()).hexdigest()
+    if state.get("version") != 2 or state.get("operation_id") != expected_operation_id:
+        raise RuntimeError("Mac mini Codex image service returned invalid durable operation state")
+    if not result.ready or result.status != "done":
+        raise RuntimeError(
+            f"Mac mini Codex image job {result.job_id!r} returned non-terminal status {result.status!r}"
+        )
+    if result.prompt != prompt or result.width != width or result.height != height:
+        raise RuntimeError(f"Mac mini Codex image job {result.job_id!r} returned mismatched request metadata")
+    if result.provider != "codex" or result.model_used.provider != "codex":
+        raise RuntimeError(
+            f"Mac mini Codex image job {result.job_id!r} returned provider {result.provider!r}"
+        )
+    if not result.job_id.strip() or state.get("job_id") != result.job_id:
+        raise RuntimeError("Mac mini Codex image service returned an invalid durable job identity")
+    if result.idempotency_key != idempotency_key or state.get("idempotency_key") != idempotency_key:
+        raise RuntimeError(f"Mac mini Codex image job {result.job_id!r} returned an invalid idempotency key")
+    if request != expected_request:
+        raise RuntimeError(f"Mac mini Codex image job {result.job_id!r} state does not match the exact request")
+    if Path(str(state.get("output_path", ""))) != expected_path or result.path != expected_path:
+        raise RuntimeError(f"Mac mini Codex image job {result.job_id!r} returned the wrong artifact path")
+    _validate_image_artifact(expected_path, width, height, result.job_id)
 
 
 # ##################################################################
-# load pending image job
-# resumes only an exact matching durable request and never guesses an id
-def _load_pending_image_job(output_path: Path, request_hash: str) -> str | None:
-    path = _pending_image_job_path(output_path)
-    if not path.is_file():
-        return None
-    record = json.loads(path.read_text())
-    job_id = record.get("job_id")
-    if record.get("request_hash") != request_hash or not isinstance(job_id, str):
-        return None
-    return job_id.strip() or None
+# validate image artifact
+# requires a non-empty fully decoded jpeg at exactly the requested dimensions
+def _validate_image_artifact(output_path: Path, width: int, height: int, job_id: str) -> None:
+    if not output_path.is_file() or output_path.stat().st_size <= 0:
+        raise RuntimeError(f"Mac mini Codex image job {job_id!r} returned no non-empty artifact")
+    try:
+        with Image.open(output_path) as image:
+            image.load()
+            if image.format != "JPEG" or image.size != (width, height):
+                raise RuntimeError(
+                    f"Mac mini Codex image job {job_id!r} returned {image.format} {image.size}, "
+                    f"expected JPEG {(width, height)}"
+                )
+    except (OSError, UnidentifiedImageError) as error:
+        raise RuntimeError(
+            f"Mac mini Codex image job {job_id!r} returned an undecodable JPEG artifact: {error}"
+        ) from error
 
 
 def validate_image_backend(backend: str) -> str:

@@ -194,7 +194,7 @@ def add_backend_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--backend", choices=["sdk", "arbiter"], default=os.environ.get("NOVELISER2_BACKEND", "sdk"),
                         help="AI backend to use (default: sdk)")
     parser.add_argument("--arbiter-base-url", default=os.environ.get("NOVELISER2_ARBITER_BASE_URL", ""),
-                        help="Override the Arbiter base URL for text and image generation")
+                        help="Override the Arbiter base URL for text generation only")
     parser.add_argument("--arbiter-high-model", default=os.environ.get("NOVELISER2_ARBITER_HIGH_MODEL", ""),
                         help="Arbiter model for high-quality text steps")
     parser.add_argument("--arbiter-low-model", default=os.environ.get("NOVELISER2_ARBITER_LOW_MODEL", ""),
