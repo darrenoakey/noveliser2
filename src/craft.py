@@ -98,7 +98,7 @@ CRAFT RULES — write "unputdownable" prose:
   fragmentation.
 - PRESSURE: keep a quiet ticking clock (a literal or figurative deadline) present.
 - CUT THESE: passive voice; qualifiers (very, quite, little, pretty); adverb+weak
-  verb pairs (use one precise verb); the word "suddenly"; dummy "there was…";
+  verb pairs (use one precise verb); the word "suddenly"; empty "there was…";
   "-ing" participle pile-ups; bloated flashbacks; pages of introspection."""
 
 
@@ -110,7 +110,12 @@ def render_character_engine(characters: list) -> str:
     lines: list[str] = []
     for c in characters:
         bits: list[str] = []
-        for label, attr in (("Lie", "lie"), ("Want", "want"), ("Need", "need"), ("Wound", "wound")):
+        for label, attr in (
+            ("Lie", "lie"),
+            ("Want", "want"),
+            ("Need", "need"),
+            ("Wound", "wound"),
+        ):
             val = (getattr(c, attr, "") or "").strip()
             if val:
                 bits.append(f"{label}: {val}")

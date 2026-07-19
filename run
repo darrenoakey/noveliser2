@@ -199,8 +199,6 @@ def add_backend_options(parser: argparse.ArgumentParser) -> None:
                         help="Arbiter model for high-quality text steps")
     parser.add_argument("--arbiter-low-model", default=os.environ.get("NOVELISER2_ARBITER_LOW_MODEL", ""),
                         help="Arbiter model for fast text steps")
-    parser.add_argument("--arbiter-image-model", default=os.environ.get("NOVELISER2_ARBITER_IMAGE_MODEL", ""),
-                        help="Arbiter image model override")
     parser.add_argument("--skip-images", action="store_true",
                         default=os.environ.get("NOVELISER2_SKIP_IMAGES", "").lower() in {"1", "true", "yes", "on"},
                         help="Skip cover and chapter image generation")
@@ -214,8 +212,6 @@ def apply_backend_options(args: argparse.Namespace) -> None:
         os.environ["NOVELISER2_ARBITER_HIGH_MODEL"] = args.arbiter_high_model
     if args.arbiter_low_model:
         os.environ["NOVELISER2_ARBITER_LOW_MODEL"] = args.arbiter_low_model
-    if args.arbiter_image_model:
-        os.environ["NOVELISER2_ARBITER_IMAGE_MODEL"] = args.arbiter_image_model
     if args.skip_images:
         os.environ["NOVELISER2_SKIP_IMAGES"] = "1"
     else:

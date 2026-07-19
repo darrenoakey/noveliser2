@@ -15,7 +15,10 @@ will NOT find it once running — pgrep `noveliser2` or capture `$!`.
   Ollama box — DHCP-assigned IP, was 10.0.0.237, now 10.0.0.42; if unreachable check the
   asus router's dnsmasq leases for "boringstack"). `chat`/`chat_structured` take an
   optional `tier=` override.
-- Images: `generate_images.py` calls `agent.image()` (no provider) → codex provider.
+- Images: `generate_images.py` calls `agent.image()` with no legacy provider/model
+  override, verifies the durable job is ready and the output is non-empty, and routes
+  only to the Mac mini Codex image service. `--backend arbiter` remains text-only and
+  actively disables image generation rather than silently changing image backends.
 - Embeddings: `agent.embed()` → arbiter on spark (10.0.0.254). 768-dim.
 - The SDK is **editable-installed** in `.venv` (`python -m pip install -e ~/src/daz-agent-sdk
   --no-deps`; `--no-deps` because of the local-only `arbiter-client` dep). The venv's

@@ -7,7 +7,6 @@ BACKEND_ENV = "NOVELISER2_BACKEND"
 ARBITER_BASE_URL_ENV = "NOVELISER2_ARBITER_BASE_URL"
 ARBITER_HIGH_MODEL_ENV = "NOVELISER2_ARBITER_HIGH_MODEL"
 ARBITER_LOW_MODEL_ENV = "NOVELISER2_ARBITER_LOW_MODEL"
-ARBITER_IMAGE_MODEL_ENV = "NOVELISER2_ARBITER_IMAGE_MODEL"
 SKIP_IMAGES_ENV = "NOVELISER2_SKIP_IMAGES"
 
 
@@ -30,11 +29,6 @@ def get_arbiter_text_model(model: str) -> str:
     if model == "haiku":
         return os.environ.get(ARBITER_LOW_MODEL_ENV, os.environ.get(ARBITER_HIGH_MODEL_ENV, "gemma4-26b"))
     return os.environ.get(ARBITER_HIGH_MODEL_ENV, "gemma4-26b")
-
-
-def get_arbiter_image_model() -> str | None:
-    model = os.environ.get(ARBITER_IMAGE_MODEL_ENV, "").strip()
-    return model or None
 
 
 def skip_images() -> bool:
