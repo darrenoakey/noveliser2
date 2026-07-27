@@ -27,8 +27,8 @@ def get_arbiter_base_url() -> str:
 
 def get_arbiter_text_model(model: str) -> str:
     if model == "haiku":
-        return os.environ.get(ARBITER_LOW_MODEL_ENV, os.environ.get(ARBITER_HIGH_MODEL_ENV, "gemma4-26b"))
-    return os.environ.get(ARBITER_HIGH_MODEL_ENV, "gemma4-26b")
+        return os.environ.get(ARBITER_LOW_MODEL_ENV, os.environ.get(ARBITER_HIGH_MODEL_ENV, "local-coder"))
+    return os.environ.get(ARBITER_HIGH_MODEL_ENV, "local-coder")
 
 
 def skip_images() -> bool:
