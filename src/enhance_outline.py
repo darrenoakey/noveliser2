@@ -1,50 +1,31 @@
-from brain import chat
+from brain import chat_structured
 from models import EnhancedOutline
+from story_validation import (PremiseGuard, plan_with_feedback, validate_premise, with_feedback)
 
 
 # ##################################################################
 # enhance outline
-# enrich the story outline with humor and romance elements
-def enhance_outline(outline: str) -> EnhancedOutline:
+# maintain the plan while enriching only relationships and levity with causal purpose
+def enhance_outline(outline: str, premise: PremiseGuard | None = None) -> EnhancedOutline:
     messages = [
-        {"role": "system", "content": "You are a story editor specializing in adding depth through humor and romance."},
-        {"role": "user", "content": f"""Review this outline and enhance it with subtle humor and romance:
+        {"role": "system", "content": "You are a developmental editor who writes revised STORY OUTLINES, not critiques or reviews."},
+        {"role": "user", "content": f"""Rewrite the story outline below as a story outline, preserving every important plot cause, cost, payoff, time jump and character relationship. Put the NEW STORY OUTLINE itself in the `outline` field: no commentary, praise, review, analysis, editorial notes, headings like 'Review:', or discussion of what you changed. Preserve the complete beginning, middle, and ending.
 
+If an existing relationship, romantic feeling, or levity genuinely changes a consequential decision, sharpen that link and list it in its respective element field. Otherwise leave those lists empty. Do NOT invent romance, a love triangle, jokes, or a new character to fill a beat. Keep all ages and relationships consistent and do not depict an adult-minor romance.
+
+STORY OUTLINE TO REWRITE:
 {outline}
 
-Add:
-1. At least one humorous subplot or character quirk
-2. A romantic element (doesn't have to be the main focus)
-3. Moments of levity to balance any serious themes
-
-Return the enhanced outline while preserving the core story.
-
-At the end, list:
-HUMOR ELEMENTS:
-- (each humor element on its own line)
-
-ROMANCE ELEMENTS:
-- (each romance element on its own line)"""},
+Do not give real supernatural magic to anyone except the established protagonist. Do not replace a concrete material crisis with a witch hunt, pyre, or secret wizard."""},
     ]
-    result_text = chat(messages)
+    prior: EnhancedOutline | None = None
 
-    outline_text = result_text
-    humor_elements = []
-    romance_elements = []
+    def build(issues: list[str]) -> EnhancedOutline:
+        nonlocal prior
+        draft = prior.model_dump_json() if prior else ""
+        prior = chat_structured(with_feedback(messages, issues, draft), EnhancedOutline)
+        return prior
 
-    if "HUMOR ELEMENTS:" in result_text:
-        parts = result_text.split("HUMOR ELEMENTS:")
-        outline_text = parts[0].strip()
-        remainder = parts[1]
-        if "ROMANCE ELEMENTS:" in remainder:
-            humor_part, romance_part = remainder.split("ROMANCE ELEMENTS:")
-            humor_elements = [line.strip("- ").strip() for line in humor_part.strip().split("\n") if line.strip() and line.strip() != "-"]
-            romance_elements = [line.strip("- ").strip() for line in romance_part.strip().split("\n") if line.strip() and line.strip() != "-"]
-        else:
-            humor_elements = [line.strip("- ").strip() for line in remainder.strip().split("\n") if line.strip() and line.strip() != "-"]
-
-    return EnhancedOutline(
-        outline=outline_text if outline_text else result_text,
-        humor_elements=humor_elements[:5],
-        romance_elements=romance_elements[:5],
+    return plan_with_feedback(
+        build, lambda result: validate_premise(result.outline, premise), "enhanced outline",
     )

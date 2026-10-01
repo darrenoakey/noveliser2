@@ -1,36 +1,46 @@
-import os
-
+from local_model import CONFIG_PATH
+import tomllib
 
 SDK_BACKEND = "sdk"
 ARBITER_BACKEND = "arbiter"
-BACKEND_ENV = "NOVELISER2_BACKEND"
-ARBITER_BASE_URL_ENV = "NOVELISER2_ARBITER_BASE_URL"
-ARBITER_HIGH_MODEL_ENV = "NOVELISER2_ARBITER_HIGH_MODEL"
-ARBITER_LOW_MODEL_ENV = "NOVELISER2_ARBITER_LOW_MODEL"
-SKIP_IMAGES_ENV = "NOVELISER2_SKIP_IMAGES"
+_backend = SDK_BACKEND
+_skip_images = False
 
+
+# ##################################################################
+# configure backend
+# command-line choices stay in memory and never leak through process environment
+
+def configure_backend(backend: str = SDK_BACKEND, skip_images: bool = False) -> None:
+    global _backend, _skip_images
+    if backend not in {SDK_BACKEND, ARBITER_BACKEND}:
+        raise ValueError(f"Unsupported image backend: {backend}")
+    _backend = backend
+    _skip_images = skip_images
+
+
+# ##################################################################
+# get backend
+# identify the current image route independently of the configured text model
 
 def get_backend() -> str:
-    backend = os.environ.get(BACKEND_ENV, SDK_BACKEND).strip().lower()
-    if backend not in {SDK_BACKEND, ARBITER_BACKEND}:
-        raise ValueError(f"Unsupported backend: {backend}")
-    return backend
+    return _backend
 
+
+# ##################################################################
+# use arbiter backend
+# avoid routing still images through an unsupported GPU still-image backend
 
 def use_arbiter_backend() -> bool:
-    return get_backend() == ARBITER_BACKEND
+    return _backend == ARBITER_BACKEND
 
 
-def get_arbiter_base_url() -> str:
-    return os.environ.get(ARBITER_BASE_URL_ENV, "http://10.0.0.254:8400").rstrip("/")
-
-
-def get_arbiter_text_model(model: str) -> str:
-    if model == "haiku":
-        return os.environ.get(ARBITER_LOW_MODEL_ENV, os.environ.get(ARBITER_HIGH_MODEL_ENV, "local-coder"))
-    return os.environ.get(ARBITER_HIGH_MODEL_ENV, "local-coder")
-
+# ##################################################################
+# skip images
+# honor a command-line switch or machine-local non-secret configuration
 
 def skip_images() -> bool:
-    value = os.environ.get(SKIP_IMAGES_ENV, "").strip().lower()
-    return value in {"1", "true", "yes", "on"}
+    if not CONFIG_PATH.exists():
+        return _skip_images or use_arbiter_backend()
+    config = tomllib.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    return _skip_images or use_arbiter_backend() or bool(config.get("skip_images", False))

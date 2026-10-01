@@ -1,6 +1,5 @@
 import hashlib
 import json
-import os
 from pathlib import Path
 import subprocess
 import sys
@@ -53,8 +52,6 @@ def test_legacy_image_backends_fail_closed(backend: str) -> None:
 def test_arbiter_process_cannot_submit_image_job(tmp_path: Path) -> None:
     output_path = tmp_path / "blocked.jpg"
     source_directory = Path(__file__).resolve().parent
-    process_environment = os.environ.copy()
-    process_environment["NOVELISER2_BACKEND"] = "arbiter"
     completed = subprocess.run(
         [
             sys.executable,
@@ -62,6 +59,8 @@ def test_arbiter_process_cannot_submit_image_job(tmp_path: Path) -> None:
             (
                 "import sys; "
                 "sys.path.insert(0, sys.argv[1]); "
+                "from backend import configure_backend; "
+                "configure_backend('arbiter'); "
                 "from generate_images import _run_generate_image; "
                 "_run_generate_image('must remain blocked', __import__('pathlib').Path(sys.argv[2]), 32, 32)"
             ),
@@ -69,7 +68,6 @@ def test_arbiter_process_cannot_submit_image_job(tmp_path: Path) -> None:
             str(output_path),
         ],
         cwd=tmp_path,
-        env=process_environment,
         capture_output=True,
         text=True,
     )

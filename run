@@ -187,35 +187,22 @@ def command_test_bigger(args: argparse.Namespace) -> int:
 # command check
 # run the full test suite and quality gates
 def command_check(_: argparse.Namespace) -> int:
-    return subprocess.call(["pytest", "-q", "--maxfail=3", "--disable-warnings", str(SRC_DIR)])
+    lint = subprocess.call([sys.executable, "-m", "ruff", "check", str(SRC_DIR), str(SCRIPT_DIR / "run"),
+                            str(SCRIPT_DIR / "scripts")])
+    if lint:
+        return lint
+    return subprocess.call([sys.executable, "-m", "pytest", "-q", "-W", "error", str(SRC_DIR)])
 
 
 def add_backend_options(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--backend", choices=["sdk", "arbiter"], default=os.environ.get("NOVELISER2_BACKEND", "sdk"),
-                        help="AI backend to use (default: sdk)")
-    parser.add_argument("--arbiter-base-url", default=os.environ.get("NOVELISER2_ARBITER_BASE_URL", ""),
-                        help="Override the Arbiter base URL for text generation only")
-    parser.add_argument("--arbiter-high-model", default=os.environ.get("NOVELISER2_ARBITER_HIGH_MODEL", ""),
-                        help="Arbiter model for high-quality text steps")
-    parser.add_argument("--arbiter-low-model", default=os.environ.get("NOVELISER2_ARBITER_LOW_MODEL", ""),
-                        help="Arbiter model for fast text steps")
-    parser.add_argument("--skip-images", action="store_true",
-                        default=os.environ.get("NOVELISER2_SKIP_IMAGES", "").lower() in {"1", "true", "yes", "on"},
-                        help="Skip cover and chapter image generation")
+    parser.add_argument("--backend", choices=["sdk", "arbiter"], default="sdk",
+                        help="Image route; text models are selected in local/config.toml")
+    parser.add_argument("--skip-images", action="store_true", help="Skip cover and chapter image generation")
 
 
 def apply_backend_options(args: argparse.Namespace) -> None:
-    os.environ["NOVELISER2_BACKEND"] = args.backend
-    if args.arbiter_base_url:
-        os.environ["NOVELISER2_ARBITER_BASE_URL"] = args.arbiter_base_url
-    if args.arbiter_high_model:
-        os.environ["NOVELISER2_ARBITER_HIGH_MODEL"] = args.arbiter_high_model
-    if args.arbiter_low_model:
-        os.environ["NOVELISER2_ARBITER_LOW_MODEL"] = args.arbiter_low_model
-    if args.skip_images:
-        os.environ["NOVELISER2_SKIP_IMAGES"] = "1"
-    else:
-        os.environ.pop("NOVELISER2_SKIP_IMAGES", None)
+    from backend import configure_backend
+    configure_backend(args.backend, args.skip_images)
 
 
 # ##################################################################

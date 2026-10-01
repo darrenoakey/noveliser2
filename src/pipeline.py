@@ -1,12 +1,14 @@
 from datetime import datetime
 from pathlib import Path
+from collections.abc import Callable
 
 from colorama import Fore, Style
 
 from models import (
-    BookMetadata, BookStatus, Character, Chapter, ChapterPlan,
+    BookMetadata, BookStatus, Character, Chapter, ChapterPlan, ScheduleContract,
     EnhancedOutline, Title, WritingStyle,
 )
+from story_validation import PremiseGuard
 from retrieval_memory import RetrievalMemory
 from record import record, reset_novel_dir, set_continue_mode, set_novel_dir, resolve_novel_dir
 from metadata import write_metadata, read_metadata, mark_book_finished
@@ -18,6 +20,7 @@ from create_outline import create_outline
 from enhance_outline import enhance_outline
 from define_writing_style import define_writing_style
 from break_into_chapters import break_into_chapters
+from create_schedule_contract import create_schedule_contract
 from break_into_sections import break_into_sections
 from write_section import write_section
 from generate_images import generate_cover, generate_chapter_image, use_cover_image
@@ -32,7 +35,9 @@ def write_novel(description: str, output_dir: Path, num_chapters: int = 10,
                 sections_per_chapter: int = 10, author: str = "Darren Oakey",
                 continue_novel_dir: Path | None = None, title: str | None = None,
                 style_directive: str | None = None,
-                cover_image: Path | None = None) -> Path:
+                cover_image: Path | None = None,
+                premise: PremiseGuard | None = None,
+                premise_factory: Callable[[list[Character]], PremiseGuard] | None = None) -> Path:
 
     if continue_novel_dir:
         set_continue_mode(True)
@@ -91,17 +96,20 @@ def write_novel(description: str, output_dir: Path, num_chapters: int = 10,
     characters_result = record("Create characters",
                                lambda: create_characters(description, plot_type_str, theme_values), novel_dir)
     characters = _extract_characters(characters_result)
+    if premise_factory is not None:
+        premise = premise_factory(characters)
 
     # step 5: create outline
     outline_text = record("Create outline",
                           lambda: create_outline(description, plot_type_str, theme_values,
-                                                 characters, num_chapters, sections_per_chapter), novel_dir)
+                                                 characters, num_chapters, sections_per_chapter,
+                                                 premise), novel_dir)
     if isinstance(outline_text, dict):
         outline_text = outline_text.get("outline", str(outline_text))
 
     # step 6: enhance outline
     enhanced_result = record("Enhance outline",
-                             lambda: enhance_outline(outline_text), novel_dir)
+                             lambda: enhance_outline(outline_text, premise), novel_dir)
     enhanced = _extract_enhanced_outline(enhanced_result)
 
     # step 7: define writing style
@@ -109,10 +117,24 @@ def write_novel(description: str, output_dir: Path, num_chapters: int = 10,
                                   lambda: define_writing_style(enhanced.outline, theme_values, style_directive), novel_dir)
     writing_style = _extract_writing_style(writing_style_result)
 
-    # step 8: break into chapters
+    # step 8: freeze a model-authored schedule before chapter expansion. Existing
+    # recorded legacy chapters continue without inventing obligations retroactively.
+    old_chapters = bool(continue_novel_dir and (novel_dir / f"into_{num_chapters}_chapters.json").exists()
+                        and not (novel_dir / "chapter_schedule_contract.json").exists())
+    schedule = None
+    if num_chapters > 1 and not old_chapters:
+        schedule_result = record(
+            "Create chapter schedule contract",
+            lambda: create_schedule_contract(enhanced, characters, num_chapters, premise), novel_dir,
+        )
+        schedule = (schedule_result if isinstance(schedule_result, ScheduleContract)
+                    else ScheduleContract.model_validate(schedule_result))
+
+    # step 9: fill the frozen schedule with chapter decisions and concrete events.
     chapter_plan_result = record(f"Break into {num_chapters} chapters",
                                  lambda: break_into_chapters(enhanced, characters, theme_values,
-                                                             plot_type_str, num_chapters), novel_dir)
+                                                             plot_type_str, num_chapters, schedule,
+                                                             premise), novel_dir)
     chapter_plan = _extract_chapter_plan(chapter_plan_result)
 
     # step 9: cover image — adopt caller-supplied artwork verbatim, else generate
@@ -155,7 +177,7 @@ def write_novel(description: str, output_dir: Path, num_chapters: int = 10,
         # break chapter into sections
         section_plan_result = record(
             f"Break chapter {chapter.number} into {sections_per_chapter} sections",
-            lambda ch=chapter: break_into_sections(ch, sections_per_chapter, chapter_plan.chapters),
+            lambda ch=chapter: break_into_sections(ch, sections_per_chapter, chapter_plan.chapters, characters),
             novel_dir,
         )
         sections = _extract_sections(section_plan_result)

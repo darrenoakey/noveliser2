@@ -6,6 +6,7 @@ from typing import Type
 
 from daz_agent_sdk import agent, Tier
 from pydantic import BaseModel
+from local_model import load_local_model_config, local_chat
 
 SCRIPT_DIR = Path(__file__).parent.parent.resolve()
 CACHE_DIR = SCRIPT_DIR / "output" / "cache"
@@ -50,17 +51,25 @@ def _split_messages(messages: list[dict[str, str]]) -> tuple[str, str]:
     return "\n\n".join(system_parts), "\n\n".join(user_parts)
 
 
-def chat(messages: list[dict[str, str]], max_tokens: int = 4096, tier: Tier = TIER) -> str:
-    selector = f"tier:{tier.value}"
-    hash_key = _hash_input(messages, selector, extra=f"max_tokens:{max_tokens}")
+def chat(messages: list[dict[str, str]], max_tokens: int = 4096, tier: Tier = TIER,
+         purpose: str = "planning") -> str:
+    config = load_local_model_config()
+    model = config[f"{purpose}_model"] if config else ""
+    selector = f"ollama:{config['ollama_url']}:{model}" if config else f"tier:{tier.value}"
+    hash_key = _hash_input(messages, selector, extra=f"max_tokens:{max_tokens}:purpose:{purpose}")
     cached = _load_from_cache(hash_key)
     if cached:
         return cached["output"]
 
+    if config:
+        result = local_chat(messages, model, config, max_tokens, purpose=purpose)
+        _save_to_cache(hash_key, {"messages": messages, "model": model, "max_tokens": max_tokens}, result)
+        return result
+
     system_prompt, user_prompt = _split_messages(messages)
 
     async def _run() -> str:
-        response = await agent.ask(user_prompt, tier=tier, system=system_prompt or None)
+        response = await agent.ask(user_prompt, tier=tier, system=system_prompt or None, max_tokens=max_tokens)
         return response.text
 
     result = asyncio.run(_run())
@@ -73,11 +82,22 @@ def chat(messages: list[dict[str, str]], max_tokens: int = 4096, tier: Tier = TI
 
 
 def chat_structured(messages: list[dict[str, str]], model_class: Type[BaseModel], tier: Tier = TIER) -> BaseModel:
-    selector = f"tier:{tier.value}"
-    hash_key = _hash_input(messages, selector, extra=model_class.__name__)
+    config = load_local_model_config()
+    model = config["planning_model"] if config else ""
+    selector = f"ollama:{config['ollama_url']}:{model}" if config else f"tier:{tier.value}"
+    structured_max_tokens = 12000
+    hash_key = _hash_input(messages, selector, extra=json.dumps(model_class.model_json_schema(), sort_keys=True)
+                           + f":max_tokens:{structured_max_tokens}")
     cached = _load_from_cache(hash_key)
     if cached:
         return model_class(**cached["output"])
+
+    if config:
+        result = model_class.model_validate_json(local_chat(messages, model, config, structured_max_tokens,
+                                                            schema=model_class))
+        _save_to_cache(hash_key, {"messages": messages, "model": model, "schema": model_class.__name__},
+                       result.model_dump())
+        return result
 
     system_prompt, user_prompt = _split_messages(messages)
 
@@ -87,6 +107,7 @@ def chat_structured(messages: list[dict[str, str]], model_class: Type[BaseModel]
             tier=tier,
             system=system_prompt or None,
             schema=model_class,
+            max_tokens=structured_max_tokens,
         )
         return response.parsed  # type: ignore[union-attr]
 

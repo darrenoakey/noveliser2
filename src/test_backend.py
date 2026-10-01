@@ -1,54 +1,23 @@
-import json
-import os
-from pathlib import Path
-import subprocess
-import sys
+from backend import configure_backend, get_backend, skip_images, use_arbiter_backend
+from generate_images import validate_image_backend
+import pytest
 
 
-BACKEND_CONFIGURATION_NAMES = (
-    "NOVELISER2_BACKEND",
-    "NOVELISER2_ARBITER_HIGH_MODEL",
-    "NOVELISER2_ARBITER_LOW_MODEL",
-)
+def test_backend_choice_controls_real_image_route() -> None:
+    configure_backend("sdk", False)
+    assert get_backend() == "sdk"
+    assert not use_arbiter_backend()
+    validate_image_backend(get_backend())
+    configure_backend("arbiter", False)
+    assert use_arbiter_backend()
+    assert skip_images()
+    with pytest.raises(ValueError):
+        validate_image_backend(get_backend())
+    configure_backend("sdk", False)
 
 
-def run_backend_query(
-    tmp_path: Path, expression: str, configuration: dict[str, str]
-) -> object:
-    process_environment = os.environ.copy()
-    for name in BACKEND_CONFIGURATION_NAMES:
-        process_environment.pop(name, None)
-    process_environment.update(configuration)
-    source_directory = Path(__file__).resolve().parent
-    completed = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            (
-                "import json, sys; "
-                "sys.path.insert(0, sys.argv[1]); "
-                "from backend import get_arbiter_text_model, get_backend; "
-                f"print(json.dumps({expression}))"
-            ),
-            str(source_directory),
-        ],
-        cwd=tmp_path,
-        env=process_environment,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return json.loads(completed.stdout)
-
-
-def test_get_backend_defaults_to_sdk_in_clean_process(tmp_path: Path) -> None:
-    assert run_backend_query(tmp_path, "get_backend()", {}) == "sdk"
-
-
-def test_get_arbiter_text_model_uses_process_configuration(tmp_path: Path) -> None:
-    models = run_backend_query(
-        tmp_path,
-        "[get_arbiter_text_model('opus'), get_arbiter_text_model('haiku')]",
-        {"NOVELISER2_ARBITER_HIGH_MODEL": "qwen3.6-27b"},
-    )
-    assert models == ["qwen3.6-27b", "qwen3.6-27b"]
+def test_explicit_skip_images_does_not_change_backend() -> None:
+    configure_backend("sdk", True)
+    assert skip_images()
+    assert get_backend() == "sdk"
+    configure_backend("sdk", False)

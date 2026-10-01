@@ -9,10 +9,14 @@ from models import (
 from retrieval_memory import RetrievalMemory
 
 from brain import chat
+from story_validation import StoryPlanError, validate_prose, with_feedback
 from craft import PROSE_CRAFT, render_character_engine
 
 # how many prior sentences to retrieve as "established details" for a section
 RETRIEVAL_K = 12
+# bounded rewrites when prose is too thin or contains meta-text; only the accepted text is
+# ever returned, so the pipeline embeds into retrieval memory exactly once per accepted section.
+MAX_PROSE_ATTEMPTS = 3
 
 
 def write_section(chapter: Chapter, section: Section, previous_text: str,
@@ -48,14 +52,18 @@ def write_section(chapter: Chapter, section: Section, previous_text: str,
     established = memory.retrieve(query, k=RETRIEVAL_K, exclude_section=section_id)
     established_block = _render_established(established)
 
-    section_text = _generate_prose(
-        chapter, section, writing_style, all_chapters_summary,
-        position_note, previous_context, character_block, engine_block,
-        scene_directive, established_block,
-    )
-    section_text = _clean_narrative(section_text)
-
-    return SectionResult(text=section_text, new_facts=[])
+    issues: list[str] = []
+    for _ in range(MAX_PROSE_ATTEMPTS):
+        section_text = _generate_prose(
+            chapter, section, writing_style, all_chapters_summary,
+            position_note, previous_context, character_block, engine_block,
+            scene_directive, established_block, issues,
+        )
+        section_text = _clean_narrative(section_text)
+        issues = validate_prose(section_text)
+        if not issues:
+            return SectionResult(text=section_text, new_facts=[])
+    raise StoryPlanError(f"prose for {section_id}", issues, MAX_PROSE_ATTEMPTS)
 
 
 def _render_scene_directive(section: Section) -> str:
@@ -73,6 +81,16 @@ def _render_scene_directive(section: Section) -> str:
         )
     if section.disaster:
         body += f" The turn this section builds toward: {section.disaster}"
+    causal = [
+        ("POV character", section.pov_character), ("Forced by", section.cause),
+        ("Obstacle", section.obstacle), ("Choice", section.choice), ("Cost", section.cost),
+        ("Value shift", f"{section.value_before} -> {section.value_after}" if section.value_before or section.value_after else ""),
+        ("Plant (subtly)", ", ".join(section.setups)), ("Pay off", ", ".join(section.payoffs)),
+        ("Must hand to next section", section.next_obligation),
+    ]
+    detail = "; ".join(f"{k}: {v}" for k, v in causal if v)
+    if detail:
+        body += f" Causal plan - {detail}."
     return f"\n\nSECTION DRAMATIC SHAPE: {body}\n"
 
 
@@ -83,7 +101,15 @@ def _render_characters(characters: list[Character]) -> str:
     for c in characters:
         traits = ", ".join(c.traits) if c.traits else ""
         trait_part = f" — {traits}" if traits else ""
-        lines.append(f"- {c.name} ({c.role.value if hasattr(c.role, 'value') else c.role}): {c.biography}{trait_part}")
+        extras = []
+        if c.flaw:
+            extras.append(f"flaw: {c.flaw}")
+        if c.voice:
+            extras.append(f"speaks: {c.voice}")
+        if c.relationships:
+            extras.append("relationships: " + "; ".join(f"{r.other} ({r.dynamic})" for r in c.relationships))
+        extra_part = f" [{' | '.join(extras)}]" if extras else ""
+        lines.append(f"- {c.name} ({c.role.value if hasattr(c.role, 'value') else c.role}): {c.biography}{trait_part}{extra_part}")
     return "\n".join(lines)
 
 
@@ -101,7 +127,7 @@ def _render_established(sentences: list[str]) -> str:
 def _generate_prose(chapter: Chapter, section: Section, writing_style: WritingStyle,
                     all_chapters_summary: str, position_note: str, previous_context: str,
                     character_block: str, engine_block: str, scene_directive: str,
-                    established_block: str) -> str:
+                    established_block: str, issues: list[str] | None = None) -> str:
     system_content = f"""You are a novelist writing prose fiction. You output ONLY narrative text - no commentary, no meta-discussion, no preamble, no "I'll write..." statements. Just the story itself.
 
 Writing Style: {writing_style.style_description}
@@ -124,7 +150,7 @@ CRITICAL: Output ONLY the narrative prose. No introductions, no explanations, no
     user_content = f"""CHAPTER: {chapter.number} - {chapter.title}
 Chapter Goal: {chapter.chapter_goal}
 Chapter Opening: {chapter.opening_situation}
-Chapter Closing: {chapter.closing_situation}
+Chapter Closing: {chapter.closing_situation}{_chapter_causal_line(chapter)}
 
 SECTION: {section.number}
 Section Goal: {section.goal}
@@ -139,7 +165,15 @@ Output ONLY the story text. No headers, no commentary, no meta-text. Begin the n
         {"role": "system", "content": system_content},
         {"role": "user", "content": user_content},
     ]
-    return chat(messages, max_tokens=2400)
+    return chat(with_feedback(messages, issues or []), max_tokens=3500, purpose="prose")
+
+
+def _chapter_causal_line(chapter: Chapter) -> str:
+    parts = [("Forced by", chapter.cause_from_previous), ("Stakes", chapter.stakes),
+             ("Choice/cost", f"{chapter.choice} / {chapter.cost}" if chapter.choice or chapter.cost else ""),
+             ("Reversal", chapter.reversal), ("Open question to leave", chapter.open_question)]
+    text = "; ".join(f"{k}: {v}" for k, v in parts if v)
+    return f"\nChapter Causality: {text}" if text else ""
 
 
 def _clean_narrative(text: str) -> str:

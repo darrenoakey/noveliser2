@@ -1,0 +1,33 @@
+# Local fiction model evaluation — 2026-10-02
+
+## Protocol and limitations
+
+All 22 unedited outputs were generated on the same *remote* 128-GiB M5 Max Boringstack using Ollama 0.35.0 `/api/chat`, `think:false`, `temperature:0.7`, `num_ctx:8192`, seeds 11 and 37. Four installed models each received the **identical** six-turning-point magician premise and 600–800-word sealed-glass scene; the three plausible higher-throughput finalists also received the same seven-canon-fact, red-thread setup/payoff continuation scenario. The initial tasks capped generation at 1250 tokens and continuity at 2200. The complete prompts, outputs, seeds, wall times, token counts and termination reasons are stored verbatim as 22 JSON records in `output/model_evaluation/` (gitignored); the complete readable text is packaged in `side_by_side.md` in the same directory and delivered separately. Source: `scripts/evaluate_models.py`.
+
+This is an **editorial pilot**, not a statistically powered blind human panel. A single editor read outputs and identified observable instruction/continuity problems; no uncalibrated LLM-judge scores are advertised as proof of literary quality. LitBench ([Fein et al., EACL 2026](https://aclanthology.org/2026.eacl-long.362/)) found even a strong generic off-the-shelf judge reached roughly 73% human-preference agreement on its test set. For broader adoption, randomize/blind A/B sample labels, reverse presentation order, and obtain independent human preferences on more seeds and genre packets.
+
+## Exact installed models and measured output speed
+
+| Tag (Ollama 0.35.0) | Checkpoint family / quantization | Plan tok/s | Initial prose tok/s | Continuation tok/s | Mean continuity wall | Continuation terminal `stop` |
+|---|---|---:|---:|---:|---:|---:|
+| `ornith-1.5:35b` | Ornith 1.5 35B-A3B / GGUF Q4_K_M, 22.62 GB | 112.6 | 97.4 | 102.7 | 22.8 s | 1/2 |
+| `qwen3.6:35b-a3b` | Qwen3.6 35B-A3B / GGUF Q4_K_M, 22.62 GB | 102.6 | 107.7 | 93.6 | 21.3 s | 2/2 |
+| `gemma4:26b` | Gemma4 26B / GGUF Q4_K_M, 18.60 GB | 55.3 | 38.2 | 46.7 | 48.2 s | 1/2 |
+| `qwen3.8:27b` | Qwen3.8 27B / GGUF Q4_K_M, 17.74 GB | 16.5 | 11.5 | not tested | — | — |
+
+The speeds are `eval_count / eval_duration`, not latency conflated with prompt processing or GPU queue time; two independent seeds per cell. Ollama reported `done_reason: length` for most 1250-token initial prose samples, which were often unfinished mid-sentence. **Those are not production prose quality scores.** Long samples still overshot requested word count (e.g. 1495–1651 words vs 850–1050 for Ornith continuation), so a production length check alone does not prove instruction adherence. `qwen3.8:27b` was eliminated from the expensive continuation arm because 11.5 prose tokens/sec would multiply full-novel time by roughly nine without an obvious gain in the initial outputs. No new model was downloaded or loaded on the laptop or Spark.
+
+## Human-readable pairwise observations
+
+- **Ornith vs Qwen3.6 on the opening:** Ornith seed 11 anchors the moment in a concrete vanishing-sparrow mechanism and skeptical performer Kessa. Qwen3.6 seed 11 opens with “his heart hammering against his ribs like a trapped bird” and calls Rhea's gaze “the cold, detached eyes of a hawk,” making the initial page more stock and explanatory. Both can tell an impossible coin story; both initial scene outputs were length-capped.
+- **Ornith vs Qwen3.6 on continuation:** Ornith seed 37 lets Rhea take the contract to Orin while he offers a plausible apparatus explanation, making her action and their unequal knowledge carry the ending; the recurring open-hands gesture is slightly repetitive but character-specific. Qwen3.6 seed 11 announces its theme directly: “It was a hard choice, irreversible and specific,” then explains that Orin “would destroy him.” The latter is readable but substitutes narrator summary for enacted stakes. Ornith seed 11, by contrast, ends *truncated* while Rhea threatens to sell him to the magistrate; the model is not reliably superior in every sample.
+- **Gemma4 vs Ornith:** Gemma4 seed 11 initial scene has a complete sensory-cost ending and a coherent lie to Rhea; its sequel seed 11 treats the red thread chiefly as an accident leading to a broken door, then recaps the themes after the climax. Gemma4 seed 37 continuation also truncates. All three models often miss the requested length and lean on crowded-room odor catalogs.
+- **Planning:** Ornith's 11-seed plan gives mentor Fenwick a strategic motive to teach false methods and a later arrest caused by his intervention. Qwen3.6's 11-seed plan claims to stage a lead-to-gold transmutation using hidden gold (breaking its own stated mechanism), then escalates to weather anomalies and inquisitors. Gemma4's 37-seed ending proposes finding “others like him,” contradicting the premise that he is unique. Qwen3.8 proposes healing before touch and agents who track “ozone” by hair; it is imaginative but prematurely explains a magic system and reverts to generic inquisition danger. None can be left unedited to establish long-form premise adherence.
+
+## Provisional routing decision
+
+Use **Ornith 1.5 35B-A3B Q4_K_M for prose** on Boringstack for its stronger scene-level specificity and dialogic subtext at high measured throughput. Test it in Noveliser's *real structured planning* schema before naming the planning winner; if it fails even with a sufficient structured token allowance, choose the best schema-valid faster baseline (`qwen3.6:35b-a3b`) for plans instead. The model routing is explicit in gitignored `local/config.toml`, with separate `planning_model` and `prose_model`; the selected model must fail closed on an unavailable host/model rather than silently switch. This recommendation is subject to the pilot and acceptance-novel editorial gate, not a claim of a definitive winner across all fiction.
+
+## Further research not claimed as a benchmark win
+
+[Qwen3.5 35B-A3B](https://huggingface.co/Qwen/Qwen3.5-35B-A3B) is not currently installed; downloading a different quant in the middle of a shared machine's workload would change more than the comparison variable. [DiscoverLLM's Qwen3-8B creative-writing LoRA](https://huggingface.co/kixlab/DiscoverLLM-creative-writing-Qwen3-8B) targets collaborative short-form writing but requires a base model, PEFT/merge and conversion; it has no demonstrated advantage for Noveliser's long-form continuity. A fine-tuned [Qwen3.5 creative-writing judge](https://huggingface.co/selfhypnosis-ai/Qwen3.5-4B-Creative-Writing-Judge) is a screening idea, not an independent human verdict or an installed runtime.

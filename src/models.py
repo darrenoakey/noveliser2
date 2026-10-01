@@ -91,9 +91,19 @@ class ThemeSelection(BaseModel):
 
 
 # ##################################################################
+# relationship
+# a directed pressure between this character and another named character
+class Relationship(BaseModel):
+    other: str = Field(description="Exact name of the other character")
+    dynamic: str = Field(description="What this person is to them (ally, rival, lover, mentor, victim...) and the unresolved tension")
+    pressure: str = Field(default="", description="How this relationship pushes on the character's flaw/arc, or changes over the story")
+
+
+# ##################################################################
 # character
 # a single character with biography and traits
 class Character(BaseModel):
+    age_at_start: int | None = Field(default=None, description="Age when the protagonist joins the troupe; later time jumps are explicit")
     name: str = Field(description="Character name")
     biography: str = Field(description="Character backstory and description")
     role: CharacterRole = Field(description="Role in the story")
@@ -103,6 +113,10 @@ class Character(BaseModel):
     want: str = Field(default="", description="Concrete external goal they pursue in the plot")
     need: str = Field(default="", description="Internal truth they must accept to become whole (often the opposite of the Lie)")
     arc: str = Field(default="", description="Arc type: positive change, flat, disillusionment, or corruption")
+    flaw: str = Field(default="", description="Observable behavioral flaw that costs them in scenes (not just a feeling)")
+    voice: str = Field(default="", description="Distinctive speech: diction, rhythm, what they avoid saying, a verbal habit")
+    arc_pressure: str = Field(default="", description="The event or choice that forces the arc: how the Lie is tested and finally abandoned or embraced")
+    relationships: list[Relationship] = Field(default_factory=list, description="Key relationships with other named characters")
 
 
 # ##################################################################
@@ -142,6 +156,21 @@ class Chapter(BaseModel):
     chapter_goal: str = Field(description="What this chapter achieves in the story arc")
     closing_situation: str = Field(description="State of affairs at chapter end")
     key_events: list[str] = Field(description="Major plot points and story beats")
+    pov_character: str = Field(default="", description="Exact name of the character whose pursuit drives this chapter")
+    cause_from_previous: str = Field(default="", description="The specific consequence of the previous chapter that forces this chapter (empty only for chapter 1)")
+    pursuit: str = Field(default="", description="What the actor concretely tries to achieve in this chapter")
+    opposition: str = Field(default="", description="Specific person/force/obstacle opposing the pursuit")
+    stakes: str = Field(default="", description="What is lost, and by whom, if the pursuit fails")
+    choice: str = Field(default="", description="The hard choice the actor makes between competing options")
+    cost: str = Field(default="", description="What the choice costs, irreversibly")
+    reversal: str = Field(default="", description="The reversal or revelation that changes what the actor believes or must do")
+    value_before: str = Field(default="", description="Value state (e.g. trust, safety, hope, knowledge) at chapter start")
+    value_after: str = Field(default="", description="Value state at chapter end; must differ from value_before")
+    setups: list[str] = Field(default_factory=list, description="Short ids of promises/clues/objects planted here (e.g. 'silver-key')")
+    payoffs: list[str] = Field(default_factory=list, description="Ids of EARLIER setups paid off here")
+    subplot: str = Field(default="", description="Name of the subplot/relationship/mystery thread this chapter advances, if any")
+    subplot_change: str = Field(default="", description="How that thread changes in this chapter")
+    open_question: str = Field(default="", description="The question the reader needs answered after this chapter (empty only for the final chapter)")
 
 
 # ##################################################################
@@ -149,6 +178,35 @@ class Chapter(BaseModel):
 # the complete chapter breakdown for the novel
 class ChapterPlan(BaseModel):
     chapters: list[Chapter] = Field(description="All chapters of the novel")
+    central_question: str = Field(default="", description="The dramatic/mystery question the whole novel answers")
+    subplots: list[str] = Field(default_factory=list, description="Names of subplot/mystery threads; each must be advanced by at least one chapter's subplot field")
+
+
+# ##################################################################
+# schedule contract
+# A model-authored, finite commitment ledger for a later chapter planner.
+class ScheduledObligation(BaseModel):
+    id: str = Field(pattern=r"^[a-z][a-z0-9-]{1,47}$", description="Stable machine identifier")
+    entity_anchor: str = Field(min_length=8, max_length=160,
+                               description="Concrete identity shared by the plant and payoff")
+    plant_chapter: int = Field(ge=1)
+    plant_anchor: str = Field(min_length=8, max_length=240,
+                              description="Exact on-page plant action")
+    payoff_chapter: int = Field(ge=2)
+    payoff_anchor: str = Field(min_length=8, max_length=240,
+                               description="Exact later on-page payoff action using the same entity")
+
+
+class ScheduledHandoff(BaseModel):
+    from_chapter: int = Field(ge=1)
+    to_chapter: int = Field(ge=2)
+    consequence_anchor: str = Field(min_length=8, max_length=240,
+                                    description="Concrete consequence that forces the next chapter")
+
+
+class ScheduleContract(BaseModel):
+    obligations: list[ScheduledObligation] = Field(min_length=1, max_length=3)
+    handoffs: list[ScheduledHandoff] = Field(description="One adjacent handoff for every chapter boundary")
 
 
 # ##################################################################
@@ -160,6 +218,16 @@ class Section(BaseModel):
     key_events: str = Field(description="Specific events and story beats")
     scene_type: str = Field(default="scene", description="'scene' (proactive: goal/conflict/disaster) or 'sequel' (reactive: reaction/dilemma/decision)")
     disaster: str = Field(default="", description="The setback that ends a scene, or the hard decision/new risk that ends a sequel")
+    pov_character: str = Field(default="", description="Exact name of the POV character")
+    cause: str = Field(default="", description="What from the previous section forces this one (empty only for the chapter's first section)")
+    obstacle: str = Field(default="", description="Specific opposition met in this section")
+    choice: str = Field(default="", description="The decision/dilemma resolution the POV makes")
+    cost: str = Field(default="", description="What the choice costs")
+    value_before: str = Field(default="", description="Value state at section start")
+    value_after: str = Field(default="", description="Value state at section end; must differ from value_before")
+    setups: list[str] = Field(default_factory=list, description="Ids of promises/clues planted here")
+    payoffs: list[str] = Field(default_factory=list, description="Ids of earlier setups paid off here")
+    next_obligation: str = Field(default="", description="What the next section must address because of how this one ends (empty for the chapter's last section)")
 
 
 # ##################################################################
@@ -213,3 +281,62 @@ class BookMetadata(BaseModel):
     current_step: str | None = None
     epub_path: str | None = None
     cover_path: str | None = None
+
+# ##################################################################
+# strict generation schemas
+# legacy checkpoints accept absent causal fields, but new Ollama JSON output
+# must fill them rather than treating default empty strings as a valid suggestion.
+class GeneratedCharacter(Character):
+    age_at_start: int = Field(ge=8, le=100)
+    wound: str = Field(min_length=5)
+    lie: str = Field(min_length=5)
+    want: str = Field(min_length=5)
+    need: str = Field(min_length=5)
+    arc: str = Field(min_length=5)
+    flaw: str = Field(min_length=5)
+    voice: str = Field(min_length=5)
+    arc_pressure: str = Field(min_length=5)
+    relationships: list[Relationship] = Field(min_length=1)
+
+
+class GeneratedCharactersList(CharactersList):
+    characters: list[GeneratedCharacter] = Field(min_length=3, max_length=5)
+
+
+class GeneratedChapter(Chapter):
+    cause_from_previous: str = Field(min_length=5)
+    pov_character: str = Field(min_length=2)
+    pursuit: str = Field(min_length=5)
+    opposition: str = Field(min_length=5)
+    stakes: str = Field(min_length=5)
+    choice: str = Field(min_length=5)
+    cost: str = Field(min_length=5)
+    reversal: str = Field(min_length=5)
+    value_before: str = Field(min_length=3)
+    value_after: str = Field(min_length=3)
+    open_question: str = Field(min_length=5)
+    subplot: str = Field(min_length=2)
+    subplot_change: str = Field(min_length=5)
+    setups: list[str] = Field(description="Only short stable identifiers, e.g. red-thread; empty if none")
+    payoffs: list[str] = Field(description="Exact IDs from earlier chapters, no explanations; empty if none")
+
+
+class GeneratedChapterPlan(ChapterPlan):
+    chapters: list[GeneratedChapter]
+    central_question: str = Field(min_length=5)
+    subplots: list[str] = Field(min_length=1, max_length=3)
+
+
+class GeneratedSection(Section):
+    cause: str = Field(min_length=5)
+    next_obligation: str = Field(min_length=5)
+    pov_character: str = Field(min_length=2)
+    obstacle: str = Field(min_length=5)
+    choice: str = Field(min_length=5)
+    cost: str = Field(min_length=5)
+    value_before: str = Field(min_length=3)
+    value_after: str = Field(min_length=3)
+
+
+class GeneratedSectionPlan(SectionPlan):
+    sections: list[GeneratedSection]
