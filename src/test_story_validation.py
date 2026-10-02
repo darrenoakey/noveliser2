@@ -215,6 +215,7 @@ def test_generation_schema_demands_causal_fields_without_breaking_old_checkpoint
         (GeneratedCharactersList, "characters", "lie"),
         (GeneratedChapterPlan, "chapters", "choice"),
         (GeneratedSectionPlan, "sections", "obstacle"),
+        (GeneratedSectionPlan, "sections", "disaster"),
     ):
         defs = schema.model_json_schema()["$defs"]
         item_type = schema.model_fields[item].annotation.__args__[0].__name__
@@ -232,6 +233,17 @@ def test_legacy_checkpoints_still_load():
     # round trip of the new schema through the raw checkpoint format
     plan = good_plan()
     assert ChapterPlan(**json.loads(json.dumps(plan.model_dump()))) == plan
+
+
+def test_used_short_subplot_ids_are_declared():
+    from story_validation import declare_used_subplots
+
+    plan = good_plan()
+    plan.chapters[1].subplot = "trust"
+    plan.chapters[1].subplot_change = "Nessa stops reporting what she sees."
+    declare_used_subplots(plan)
+    assert "trust" in plan.subplots
+    assert validate_chapter_plan(plan, cast().characters, 3) == []
 
 
 def test_unique_miracle_rejects_a_predecessor_and_allows_the_protagonist():

@@ -90,6 +90,7 @@ SECTION_CAUSAL_INSTRUCTION = """For EVERY section also fill in the causal contra
 - pov_character: exact name from the cast ({cast})
 - cause: for the first section, pressure from the chapter opening; otherwise the specific previous section consequence. NEVER leave empty.
 - obstacle: the specific opposition met; choice and cost: the decision made and what it costs
+- disaster: the setback that ends a scene, or the hard new risk that ends a sequel. NEVER leave it empty, and do not copy the choice verbatim.
 - value_before / value_after: the story value must be in a DIFFERENT state at the end
 - setups / payoffs: ids of clues planted here; payoffs may only cite setups planted in earlier chapters or earlier sections of this chapter
 - next_obligation: for nonfinal sections, what the next must address; for the final section, what the NEXT CHAPTER must address or how the novel's final question was answered. NEVER leave empty.

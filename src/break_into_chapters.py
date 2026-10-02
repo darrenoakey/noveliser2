@@ -1,8 +1,8 @@
 from brain import chat_structured
 from models import ChapterPlan, Character, EnhancedOutline, GeneratedChapterPlan, ScheduleContract
-from story_validation import (PremiseGuard, apply_schedule, plan_narrative_text, plan_with_feedback,
-                              validate_chapter_plan, validate_plan_against_schedule, validate_premise,
-                              with_feedback)
+from story_validation import (PremiseGuard, apply_schedule, declare_used_subplots, plan_narrative_text,
+                              plan_with_feedback, validate_chapter_plan, validate_plan_against_schedule,
+                              validate_premise, with_feedback)
 
 
 # ##################################################################
@@ -85,7 +85,8 @@ Create exactly {num_chapters} chapters."""},
             raise ValueError(f"Requested {num_chapters} chapters, got {len(result.chapters)}")
         for i, chapter in enumerate(result.chapters):
             chapter.number = i + 1
-        return apply_schedule(result, schedule) if schedule else result
+        planned = apply_schedule(result, schedule) if schedule else result
+        return declare_used_subplots(planned)
 
     def validate(plan: ChapterPlan) -> list[str]:
         issues = validate_chapter_plan(plan, characters, num_chapters,

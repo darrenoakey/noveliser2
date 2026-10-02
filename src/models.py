@@ -334,6 +334,7 @@ class GeneratedSection(Section):
     obstacle: str = Field(min_length=5)
     choice: str = Field(min_length=5)
     cost: str = Field(min_length=5)
+    disaster: str = Field(min_length=5)
     value_before: str = Field(min_length=3)
     value_after: str = Field(min_length=3)
 

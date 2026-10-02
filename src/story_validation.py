@@ -269,6 +269,21 @@ def validate_premise(text: str, guard: PremiseGuard | None, *,
     return issues
 
 
+def declare_used_subplots(plan: ChapterPlan) -> ChapterPlan:
+    """Project short subplot ids the chapters already use into the plan list.
+
+    The model often advances a thread in a chapter and forgets to copy that id into
+    plan.subplots. That is bookkeeping, not a new story beat.
+    """
+    declared = {_norm(name) for name in plan.subplots}
+    for chapter in plan.chapters:
+        label = (chapter.subplot or "").strip()
+        if label and re.fullmatch(r"[A-Za-z][A-Za-z0-9-]{0,31}", label) and _norm(label) not in declared:
+            plan.subplots.append(label)
+            declared.add(_norm(label))
+    return plan
+
+
 def plan_narrative_text(plan: ChapterPlan) -> str:
     """Join the narrative fields a premise check must see, excluding machine IDs."""
     parts = [plan.central_question, *plan.subplots]
