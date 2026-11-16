@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import concurrent.futures
 import os
 import subprocess
 import sys
@@ -190,13 +191,59 @@ def command_test_bigger(args: argparse.Namespace) -> int:
 
 
 # ##################################################################
-# command check
-# run the full test suite and quality gates
+# run local quality gates plus external checks affected by this candidate
+EXTERNAL_CHECKS = {
+    "audiobook": (
+        {
+            "requirements.txt", "src/audiobook.py", "src/audio_segments.py",
+            "src/book_export.py", "src/test_audiobook.py", "src/test_audio_segments.py",
+            "src/test_book_export.py",
+        },
+        ["src/test_audiobook.py::test_real_remote_audiobook_and_restart_resume"],
+    ),
+    "style": (
+        {
+            "requirements.txt", "src/agentd3_client.py", "src/backend.py",
+            "src/craft.py", "src/define_writing_style.py", "src/models.py",
+            "src/test_style.py", "src/write_section.py",
+        },
+        [
+            "src/test_style.py::test_review_scene_revises_with_real_subagent",
+            "src/test_style.py::test_enrich_legacy_style_with_real_model",
+        ],
+    ),
+}
+
+
 def command_check(_: argparse.Namespace) -> int:
     lint = subprocess.call([sys.executable, "-m", "ruff", "check", str(SRC_DIR), str(SCRIPT_DIR / "run")])
     if lint:
         return lint
-    return subprocess.call([sys.executable, "-m", "pytest", "-q", "-W", "error", "--maxfail=3", str(SRC_DIR)])
+    try:
+        changed = subprocess.check_output(
+            ["git", "diff", "--name-only", "origin/master...HEAD"],
+            cwd=SCRIPT_DIR, text=True,
+        ).splitlines()
+    except (OSError, subprocess.CalledProcessError):
+        changed = []
+    affected = [name for name, (paths, _) in EXTERNAL_CHECKS.items()
+                if "run" in changed or paths.intersection(changed)]
+    command = [sys.executable, "-m", "pytest", "-q", "-W", "error", "--maxfail=3", str(SRC_DIR)]
+    for _, tests in EXTERNAL_CHECKS.values():
+        for test in tests:
+            command += ["--deselect", test]
+
+    # Real network/model work is intentionally outside the ordinary local suite.
+    # It remains mandatory for affected changes and independent groups run at once.
+    commands = [command] + [
+        [sys.executable, "-m", "pytest", "-q", "-W", "error", "--maxfail=3", *EXTERNAL_CHECKS[name][1]]
+        for name in affected
+    ]
+    if affected:
+        print("Impact-selected external checks: " + ", ".join(affected), flush=True)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(commands)) as pool:
+        results = list(pool.map(subprocess.call, commands))
+    return next((result for result in results if result), 0)
 
 
 def command_deploy(_: argparse.Namespace) -> int:
