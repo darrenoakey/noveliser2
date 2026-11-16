@@ -113,8 +113,7 @@ def resolve_novel_dir(title: str, base_dir: Path) -> Path:
 def _step_file_name(step_description: str) -> str:
     name = step_description.lower()
     for prefix in ("generate ", "determine ", "create ", "select ", "define ", "add ", "break ", "write "):
-        if name.startswith(prefix):
-            name = name[len(prefix):]
+        name = name.removeprefix(prefix)
     return name.replace(" ", "_") + ".json"
 
 
@@ -122,7 +121,6 @@ def _step_file_name(step_description: str) -> str:
 # record
 # execute and record a pipeline step; in continue mode, skip if already done
 def record(step_description: str, generator_fn, novel_dir: Path) -> Any:
-    global _continue_mode
 
     novel_dir.mkdir(parents=True, exist_ok=True)
     file_name = _step_file_name(step_description)
@@ -138,6 +136,7 @@ def record(step_description: str, generator_fn, novel_dir: Path) -> Any:
     print(f"{Fore.YELLOW}  {step_description}...{Style.RESET_ALL}")
 
     from metadata import update_metadata_step
+
     update_metadata_step(novel_dir, step_description, completed=False)
 
     result = generator_fn()

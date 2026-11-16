@@ -1,5 +1,7 @@
+import re
 from enum import Enum
-from pydantic import BaseModel, Field
+
+from pydantic import BaseModel, Field, field_validator
 
 
 # ##################################################################
@@ -98,10 +100,15 @@ class Character(BaseModel):
     biography: str = Field(description="Character backstory and description")
     role: CharacterRole = Field(description="Role in the story")
     traits: list[str] = Field(description="Personality traits")
-    wound: str = Field(default="", description="Defining past pain (betrayal/abandonment/humiliation) that taught them the world is dangerous")
+    wound: str = Field(
+        default="",
+        description="Defining past pain (betrayal/abandonment/humiliation) that taught them the world is dangerous",
+    )
     lie: str = Field(default="", description="One-sentence false belief built to survive the wound")
     want: str = Field(default="", description="Concrete external goal they pursue in the plot")
-    need: str = Field(default="", description="Internal truth they must accept to become whole (often the opposite of the Lie)")
+    need: str = Field(
+        default="", description="Internal truth they must accept to become whole (often the opposite of the Lie)"
+    )
     arc: str = Field(default="", description="Arc type: positive change, flat, disillusionment, or corruption")
 
 
@@ -113,14 +120,81 @@ class CharactersList(BaseModel):
 
 
 # ##################################################################
+# character voice
+# how one character talks, so dialogue never sounds interchangeable
+class CharacterVoice(BaseModel):
+    name: str = Field(description="Character name, spelled exactly as in the cast")
+    diction: str = Field(
+        default="", description="Where their words come from: job, age, region, class, history; sample nouns/verbs"
+    )
+    dialogue_habits: str = Field(
+        default="", description="Sentence habits and how they dodge painful subjects (deflect, joke, go practical)"
+    )
+    never_says: str = Field(default="", description="Words or registers this character would never use")
+
+
+# leading name of a free-text voice: "ELENA MARCHETTI (Chicago...)" or "Marcus Reid: ..."
+_VOICE_NAME = re.compile(r"^\s*([A-Z][A-Za-z'.\- ]{1,60}?)\s*(?:\(|:|—|-\s)")
+
+
+# ##################################################################
+# voice from text
+# turn a free-text voice description into a CharacterVoice, keeping all text
+def voice_from_text(text: str) -> dict:
+    match = _VOICE_NAME.match(text)
+    if not match:
+        return {"name": "", "diction": text.strip()}
+    name = match.group(1).strip()
+    if name.isupper():
+        name = name.title()
+    return {"name": name, "diction": text.strip()}
+
+
+# ##################################################################
 # writing style
-# defines the narrative voice and style for consistency
+# defines the narrative voice and style for consistency. the fields after
+# examples were added later and default to empty so old writing_style.json
+# checkpoints still load; craft.render_style_block fills gaps from house rules.
 class WritingStyle(BaseModel):
     style_description: str = Field(description="Overall writing style")
     tone: str = Field(description="Emotional tone of the narrative")
     voice: str = Field(description="Narrative perspective and voice")
     pacing: str = Field(description="Story pacing approach")
-    examples: list[str] = Field(description="2-3 example sentences showing the style")
+    examples: list[str] = Field(default_factory=list, description="2-3 example sentences showing the style")
+    narrative_distance: str = Field(
+        default="", description="POV discipline: whose head, how close, when the camera pulls back or pushes in"
+    )
+    character_voices: list[CharacterVoice] = Field(
+        default_factory=list,
+        description='One JSON object per speaking character: {"name": exact cast name, "diction": ..., '
+        '"dialogue_habits": ..., "never_says": ...}',
+    )
+    rhythm: str = Field(default="", description="How sentence and paragraph length move; how paragraphs end")
+    imagery_sources: str = Field(
+        default="",
+        description="Source domains for comparisons per POV character, and setting cliches to avoid",
+    )
+    positive_examples: list[str] = Field(
+        default_factory=list, description="3-4 original 2-5 sentence passages in this style, each showing one skill"
+    )
+    revision_brief: str = Field(default="", description="Book-specific editor's checklist for each finished scene")
+
+    # ##################################################################
+    # coerce voices
+    # models sometimes return each voice as one string ("NAME (notes): ...");
+    # keep that content rather than failing the whole style
+    @field_validator("character_voices", mode="before")
+    @classmethod
+    def coerce_voices(cls, value):
+        if not isinstance(value, list):
+            return value
+        return [voice_from_text(v) if isinstance(v, str) else v for v in value]
+
+    # ##################################################################
+    # is rich
+    # true once the concrete craft fields exist; old checkpoints are not
+    def is_rich(self) -> bool:
+        return bool(self.narrative_distance and self.character_voices and self.rhythm and self.positive_examples)
 
 
 # ##################################################################
@@ -158,8 +232,13 @@ class Section(BaseModel):
     number: int = Field(description="Section number within the chapter")
     goal: str = Field(description="What this section accomplishes")
     key_events: str = Field(description="Specific events and story beats")
-    scene_type: str = Field(default="scene", description="'scene' (proactive: goal/conflict/disaster) or 'sequel' (reactive: reaction/dilemma/decision)")
-    disaster: str = Field(default="", description="The setback that ends a scene, or the hard decision/new risk that ends a sequel")
+    scene_type: str = Field(
+        default="scene",
+        description="'scene' (proactive: goal/conflict/disaster) or 'sequel' (reactive: reaction/dilemma/decision)",
+    )
+    disaster: str = Field(
+        default="", description="The setback that ends a scene, or the hard decision/new risk that ends a sequel"
+    )
 
 
 # ##################################################################
@@ -174,7 +253,9 @@ class SectionPlan(BaseModel):
 # a single canonical fact about a subject in the story
 class Fact(BaseModel):
     subject: str = Field(description="The entity the fact is about (character, place, object) - use the canonical name")
-    attribute: str = Field(description="Short snake_case attribute name (e.g. 'breed', 'eye_color', 'occupation', 'location')")
+    attribute: str = Field(
+        description="Short snake_case attribute name (e.g. 'breed', 'eye_color', 'occupation', 'location')"
+    )
     value: str = Field(description="The value of the attribute, kept short (e.g. 'golden retriever', 'blue', 'doctor')")
     first_seen: str = Field(default="", description="Where this fact was first established, e.g. 'ch1.s2'")
 
@@ -186,7 +267,20 @@ class Fact(BaseModel):
 # the current retrieval-memory pipeline leaves it empty.
 class SectionResult(BaseModel):
     text: str = Field(description="The narrative text")
-    new_facts: list[Fact] = Field(default_factory=list, description="(legacy) facts established in this section; unused by the retrieval-memory pipeline")
+    new_facts: list[Fact] = Field(
+        default_factory=list,
+        description="(legacy) facts established in this section; unused by the retrieval-memory pipeline",
+    )
+    subagent_id: str | None = Field(
+        default=None, description="The agentd3 daemon conversation id that wrote this prose"
+    )
+    lines: list[dict] = Field(
+        default_factory=list,
+        description="Speaker-tagged lines from the model: [{speaker, text}] for audio generation",
+    )
+    review: dict = Field(
+        default_factory=dict, description="Prose-device counts for the draft and any revision (prose_checks)"
+    )
 
 
 # ##################################################################
@@ -213,3 +307,4 @@ class BookMetadata(BaseModel):
     current_step: str | None = None
     epub_path: str | None = None
     cover_path: str | None = None
+    style_directive: str | None = None

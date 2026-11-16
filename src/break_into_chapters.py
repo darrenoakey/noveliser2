@@ -5,16 +5,30 @@ from models import ChapterPlan, Character, EnhancedOutline
 # ##################################################################
 # break into chapters
 # divide the enhanced outline into detailed chapter plans
-def break_into_chapters(enhanced_outline: EnhancedOutline, characters: list[Character],
-                        themes: list[str], plot_type: str, num_chapters: int) -> ChapterPlan:
+def break_into_chapters(
+    enhanced_outline: EnhancedOutline, characters: list[Character], themes: list[str], plot_type: str, num_chapters: int
+) -> ChapterPlan:
     character_list = "\n".join([f"- {c.name} ({c.role.value}): {c.biography}" for c in characters])
     theme_list = ", ".join(themes)
-    humor_text = "\n".join(f"- {h}" for h in enhanced_outline.humor_elements) if enhanced_outline.humor_elements else "None specified"
-    romance_text = "\n".join(f"- {r}" for r in enhanced_outline.romance_elements) if enhanced_outline.romance_elements else "None specified"
+    humor_text = (
+        "\n".join(f"- {h}" for h in enhanced_outline.humor_elements)
+        if enhanced_outline.humor_elements
+        else "None specified"
+    )
+    romance_text = (
+        "\n".join(f"- {r}" for r in enhanced_outline.romance_elements)
+        if enhanced_outline.romance_elements
+        else "None specified"
+    )
 
     messages = [
-        {"role": "system", "content": "You are a story development expert who takes story outlines and creates detailed chapter breakdowns that progress the overall story."},
-        {"role": "user", "content": f"""Here's a story outline with all elements. Flesh this out into EXACTLY {num_chapters} chapters:
+        {
+            "role": "system",
+            "content": "You are a story development expert who takes story outlines and creates detailed chapter breakdowns that progress the overall story.",
+        },
+        {
+            "role": "user",
+            "content": f"""Here's a story outline with all elements. Flesh this out into EXACTLY {num_chapters} chapters:
 
 STORY OUTLINE:
 {enhanced_outline.outline}
@@ -47,7 +61,8 @@ CRITICAL REQUIREMENTS:
 - The final chapter must provide complete closure and resolution
 - No duplication across chapters
 
-Create exactly {num_chapters} chapters."""},
+Create exactly {num_chapters} chapters.""",
+        },
     ]
     result = chat_structured(messages, ChapterPlan)
 

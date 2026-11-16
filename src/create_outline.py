@@ -6,9 +6,14 @@ from models import Character
 # ##################################################################
 # create outline
 # build a detailed story outline that fits the specified scope
-def create_outline(description: str, plot_type: str, themes: list[str],
-                   characters: list[Character], num_chapters: int,
-                   sections_per_chapter: int) -> str:
+def create_outline(
+    description: str,
+    plot_type: str,
+    themes: list[str],
+    characters: list[Character],
+    num_chapters: int,
+    sections_per_chapter: int,
+) -> str:
     char_descriptions = "\n".join([f"- {c.name} ({c.role.value}): {c.biography}" for c in characters])
     total_sections = num_chapters * sections_per_chapter
 
@@ -20,12 +25,17 @@ def create_outline(description: str, plot_type: str, themes: list[str],
         scope = f"This is a full novel with {num_chapters} chapters with rich development and multiple plot threads."
 
     messages = [
-        {"role": "system", "content": "You are a master story outliner who creates compelling narrative structures that fit perfectly within the specified scope."},
-        {"role": "user", "content": f"""Create a detailed story outline that tells a COMPLETE story within exactly {num_chapters} chapters and {total_sections} total sections:
+        {
+            "role": "system",
+            "content": "You are a master story outliner who creates compelling narrative structures that fit perfectly within the specified scope.",
+        },
+        {
+            "role": "user",
+            "content": f"""Create a detailed story outline that tells a COMPLETE story within exactly {num_chapters} chapters and {total_sections} total sections:
 
 Description: {description}
 Plot Type: {plot_type}
-Themes: {', '.join(themes)}
+Themes: {", ".join(themes)}
 Characters:
 {char_descriptions}
 
@@ -45,6 +55,7 @@ Return a compact planning outline only:
 - one short paragraph on the protagonist's emotional journey (their Lie giving way to their Need)
 - one short paragraph on how the key supporting characters pressure that arc
 
-Keep the whole response under 1200 words. The story should feel complete and satisfying at this length, not like a fragment or the beginning of a longer work."""},
+Keep the whole response under 1200 words. The story should feel complete and satisfying at this length, not like a fragment or the beginning of a longer work.""",
+        },
     ]
     return chat(messages, max_tokens=1536)

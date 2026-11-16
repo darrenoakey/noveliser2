@@ -8,7 +8,9 @@ from models import EnhancedOutline
 def enhance_outline(outline: str) -> EnhancedOutline:
     messages = [
         {"role": "system", "content": "You are a story editor specializing in adding depth through humor and romance."},
-        {"role": "user", "content": f"""Review this outline and enhance it with subtle humor and romance:
+        {
+            "role": "user",
+            "content": f"""Review this outline and enhance it with subtle humor and romance:
 
 {outline}
 
@@ -24,7 +26,8 @@ HUMOR ELEMENTS:
 - (each humor element on its own line)
 
 ROMANCE ELEMENTS:
-- (each romance element on its own line)"""},
+- (each romance element on its own line)""",
+        },
     ]
     result_text = chat(messages)
 
@@ -38,10 +41,22 @@ ROMANCE ELEMENTS:
         remainder = parts[1]
         if "ROMANCE ELEMENTS:" in remainder:
             humor_part, romance_part = remainder.split("ROMANCE ELEMENTS:")
-            humor_elements = [line.strip("- ").strip() for line in humor_part.strip().split("\n") if line.strip() and line.strip() != "-"]
-            romance_elements = [line.strip("- ").strip() for line in romance_part.strip().split("\n") if line.strip() and line.strip() != "-"]
+            humor_elements = [
+                line.strip("- ").strip()
+                for line in humor_part.strip().split("\n")
+                if line.strip() and line.strip() != "-"
+            ]
+            romance_elements = [
+                line.strip("- ").strip()
+                for line in romance_part.strip().split("\n")
+                if line.strip() and line.strip() != "-"
+            ]
         else:
-            humor_elements = [line.strip("- ").strip() for line in remainder.strip().split("\n") if line.strip() and line.strip() != "-"]
+            humor_elements = [
+                line.strip("- ").strip()
+                for line in remainder.strip().split("\n")
+                if line.strip() and line.strip() != "-"
+            ]
 
     return EnhancedOutline(
         outline=outline_text if outline_text else result_text,

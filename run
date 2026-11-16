@@ -6,23 +6,27 @@ import subprocess
 import sys
 from pathlib import Path
 
-import setproctitle
-
 # ##################################################################
 # paths relative to this script, not cwd
 SCRIPT_DIR = Path(__file__).parent.resolve()
 SRC_DIR = SCRIPT_DIR / "src"
 OUTPUT_DIR = SCRIPT_DIR / "output"
 VENV_DIR = SCRIPT_DIR / ".venv"
+if not VENV_DIR.exists():
+    # Greenline's gate and development worktrees share the canonical venv.
+    common = subprocess.check_output(["git", "rev-parse", "--git-common-dir"],
+                                     cwd=SCRIPT_DIR, text=True).strip()
+    VENV_DIR = (SCRIPT_DIR / common).resolve().parent / ".venv"
 
 
 # ##################################################################
 # activate venv if present
 def activate_venv() -> None:
-    if VENV_DIR.exists() and "VIRTUAL_ENV" not in os.environ:
+    if VENV_DIR.exists():
         venv_python = VENV_DIR / "bin" / "python"
-        current_python = Path(sys.executable).resolve()
-        if venv_python.exists() and current_python != venv_python.resolve():
+        # Binary symlinks can be identical across unrelated venvs. Compare the
+        # environment prefix, not the underlying Homebrew interpreter inode.
+        if venv_python.exists() and Path(sys.prefix).resolve() != VENV_DIR.resolve():
             os.environ["VIRTUAL_ENV"] = str(VENV_DIR)
             os.execv(str(venv_python), [str(venv_python)] + sys.argv)
 
@@ -31,6 +35,8 @@ activate_venv()
 
 # add src to path after venv activation
 sys.path.insert(0, str(SRC_DIR))
+
+import setproctitle
 
 setproctitle.setproctitle("noveliser2")
 
@@ -101,7 +107,7 @@ def command_continue(args: argparse.Namespace) -> int:
 # command list finished
 # show all completed novels
 def command_list_finished(_: argparse.Namespace) -> int:
-    from colorama import init, Fore, Style
+    from colorama import Fore, Style, init
     init(autoreset=True)
 
     from metadata import list_books_by_status
@@ -122,7 +128,7 @@ def command_list_finished(_: argparse.Namespace) -> int:
 # command list ongoing
 # show all in-progress novels
 def command_list_ongoing(_: argparse.Namespace) -> int:
-    from colorama import init, Fore, Style
+    from colorama import Fore, Style, init
     init(autoreset=True)
 
     from metadata import list_books_by_status
@@ -187,35 +193,71 @@ def command_test_bigger(args: argparse.Namespace) -> int:
 # command check
 # run the full test suite and quality gates
 def command_check(_: argparse.Namespace) -> int:
-    return subprocess.call(["pytest", "-q", "--maxfail=3", "--disable-warnings", str(SRC_DIR)])
+    lint = subprocess.call([sys.executable, "-m", "ruff", "check", str(SRC_DIR), str(SCRIPT_DIR / "run")])
+    if lint:
+        return lint
+    return subprocess.call([sys.executable, "-m", "pytest", "-q", "-W", "error", "--maxfail=3", str(SRC_DIR)])
+
+
+def command_deploy(_: argparse.Namespace) -> int:
+    import json
+
+    from deployment import deploy
+
+    print(json.dumps(deploy(SCRIPT_DIR)))
+    return 0
+
+
+def command_health(_: argparse.Namespace) -> int:
+    import json
+
+    from deployment import health
+
+    print(json.dumps(health(SCRIPT_DIR)))
+    return 0
+
+
+def command_export_book(args: argparse.Namespace) -> int:
+    import json
+
+    from audiobook import AudiobookPending
+    from book_export import export_book
+
+    try:
+        report = export_book(Path(args.manuscript).expanduser().resolve(),
+                             audio=args.audio, icloud=args.icloud, books=args.books,
+                             config_path=Path(args.config).expanduser() if args.config else None)
+    except AudiobookPending as pending:
+        print(str(pending))
+        print("Audio job persisted; rerun this command later to resume without resynthesis.")
+        return 3
+    print(json.dumps(report, indent=2))
+    return 0
 
 
 def add_backend_options(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--backend", choices=["sdk", "arbiter"], default=os.environ.get("NOVELISER2_BACKEND", "sdk"),
-                        help="AI backend to use (default: sdk)")
-    parser.add_argument("--arbiter-base-url", default=os.environ.get("NOVELISER2_ARBITER_BASE_URL", ""),
+    parser.add_argument("--backend", choices=["sdk", "arbiter"], default=None,
+                        help="Override backend (default: local/config.toml, else sdk)")
+    parser.add_argument("--config", default=None, help="Explicit local TOML configuration")
+    parser.add_argument("--prose-model", default=None, help="Override the configured prose model")
+    parser.add_argument("--arbiter-base-url", default=None,
                         help="Override the Arbiter base URL for text generation only")
-    parser.add_argument("--arbiter-high-model", default=os.environ.get("NOVELISER2_ARBITER_HIGH_MODEL", ""),
+    parser.add_argument("--arbiter-high-model", default=None,
                         help="Arbiter model for high-quality text steps")
-    parser.add_argument("--arbiter-low-model", default=os.environ.get("NOVELISER2_ARBITER_LOW_MODEL", ""),
+    parser.add_argument("--arbiter-low-model", default=None,
                         help="Arbiter model for fast text steps")
-    parser.add_argument("--skip-images", action="store_true",
-                        default=os.environ.get("NOVELISER2_SKIP_IMAGES", "").lower() in {"1", "true", "yes", "on"},
-                        help="Skip cover and chapter image generation")
+    # NOTE: --images / --skip-images removed. Covers and chapter images are always
+    # generated — a book is not deliverable without a cover.
 
 
 def apply_backend_options(args: argparse.Namespace) -> None:
-    os.environ["NOVELISER2_BACKEND"] = args.backend
-    if args.arbiter_base_url:
-        os.environ["NOVELISER2_ARBITER_BASE_URL"] = args.arbiter_base_url
-    if args.arbiter_high_model:
-        os.environ["NOVELISER2_ARBITER_HIGH_MODEL"] = args.arbiter_high_model
-    if args.arbiter_low_model:
-        os.environ["NOVELISER2_ARBITER_LOW_MODEL"] = args.arbiter_low_model
-    if args.skip_images:
-        os.environ["NOVELISER2_SKIP_IMAGES"] = "1"
-    else:
-        os.environ.pop("NOVELISER2_SKIP_IMAGES", None)
+    from agentd3_client import configure as configure_agentd3
+    from backend import configure
+
+    configure(backend=args.backend, arbiter_base_url=args.arbiter_base_url,
+              arbiter_high_model=args.arbiter_high_model,
+              arbiter_low_model=args.arbiter_low_model, config_path=args.config)
+    configure_agentd3(prose_model=args.prose_model, config_path=args.config)
 
 
 # ##################################################################
@@ -254,6 +296,19 @@ def main(argv: list[str]) -> int:
     p_test_bigger = sub.add_parser("test_bigger", help="Generate a 3-chapter test novel")
     add_backend_options(p_test_bigger)
     p_test_bigger.set_defaults(func=command_test_bigger)
+
+    p_export = sub.add_parser("export-book", help="Export book.json to EPUB, narration script and optional audiobook")
+    p_export.add_argument("manuscript", help="Path to authoritative book.json")
+    p_export.add_argument("--audio", action="store_true", help="Synthesize a resumable, chaptered M4B")
+    p_export.add_argument("--icloud", action="store_true", help="Copy editions to the local iCloud Drive Books folder")
+    p_export.add_argument("--books", action="store_true", help="Import EPUB/M4B into macOS Books")
+    p_export.add_argument("--config", default=None, help="Path to audiobook TOML configuration")
+    p_export.set_defaults(func=command_export_book)
+
+    p_deploy = sub.add_parser("deploy", help="Install the canonical CLI and health-check it")
+    p_deploy.set_defaults(func=command_deploy)
+    p_health = sub.add_parser("health", help="Verify installed CLI source and rich style schema")
+    p_health.set_defaults(func=command_health)
 
     p_check = sub.add_parser("check", help="Run tests and quality gates")
     p_check.set_defaults(func=command_check)

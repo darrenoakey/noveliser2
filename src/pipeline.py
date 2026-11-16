@@ -3,37 +3,55 @@ from pathlib import Path
 
 from colorama import Fore, Style
 
-from models import (
-    BookMetadata, BookStatus, Character, Chapter, ChapterPlan,
-    EnhancedOutline, Title, WritingStyle,
-)
-from retrieval_memory import RetrievalMemory
-from record import record, reset_novel_dir, set_continue_mode, set_novel_dir, resolve_novel_dir
-from metadata import write_metadata, read_metadata, mark_book_finished
-from generate_title import generate_title
-from determine_plot_type import determine_plot_type
-from select_themes import select_themes
-from create_characters import create_characters
-from create_outline import create_outline
-from enhance_outline import enhance_outline
-from define_writing_style import define_writing_style
+from audio_segments import write_chapter_audio
+from backend import skip_images
+from book_export import manuscript_from_sections, write_reading_editions
 from break_into_chapters import break_into_chapters
 from break_into_sections import break_into_sections
+from create_characters import create_characters
+from create_outline import create_outline
+from define_writing_style import define_writing_style, enrich_writing_style
+from determine_plot_type import determine_plot_type
+from enhance_outline import enhance_outline
+from generate_images import generate_chapter_image, generate_cover, use_cover_image
+from generate_title import generate_title
+from metadata import mark_book_finished, read_metadata, write_metadata
+from models import (
+    BookMetadata,
+    BookStatus,
+    Chapter,
+    ChapterPlan,
+    Character,
+    EnhancedOutline,
+    Title,
+    WritingStyle,
+)
+from record import (
+    record,
+    reset_novel_dir,
+    resolve_novel_dir,
+    set_continue_mode,
+    set_novel_dir,
+)
+from retrieval_memory import RetrievalMemory
+from select_themes import select_themes
 from write_section import write_section
-from generate_images import generate_cover, generate_chapter_image, use_cover_image
-from epub_generator import create_epub
-from backend import skip_images
 
 
 # ##################################################################
 # write novel
 # execute the full novel generation pipeline from description to epub
-def write_novel(description: str, output_dir: Path, num_chapters: int = 10,
-                sections_per_chapter: int = 10, author: str = "Darren Oakey",
-                continue_novel_dir: Path | None = None, title: str | None = None,
-                style_directive: str | None = None,
-                cover_image: Path | None = None) -> Path:
-
+def write_novel(
+    description: str,
+    output_dir: Path,
+    num_chapters: int = 10,
+    sections_per_chapter: int = 10,
+    author: str = "Darren Oakey",
+    continue_novel_dir: Path | None = None,
+    title: str | None = None,
+    style_directive: str | None = None,
+    cover_image: Path | None = None,
+) -> Path:
     if continue_novel_dir:
         set_continue_mode(True)
         set_novel_dir(continue_novel_dir)
@@ -43,6 +61,7 @@ def write_novel(description: str, output_dir: Path, num_chapters: int = 10,
             num_chapters = metadata.num_chapters
             sections_per_chapter = metadata.sections_per_chapter
             author = metadata.author
+            style_directive = metadata.style_directive or style_directive
         novel_dir = continue_novel_dir
     else:
         reset_novel_dir()
@@ -53,9 +72,11 @@ def write_novel(description: str, output_dir: Path, num_chapters: int = 10,
     print(f"{Fore.CYAN}{'=' * 60}{Style.RESET_ALL}")
 
     # step 1: title — use the caller-supplied title verbatim, else generate one
-    title_result = record("Generate a title",
-                          lambda: Title(title=title) if title else generate_title(description),
-                          novel_dir or output_dir / "novel_in_progress")
+    title_result = record(
+        "Generate a title",
+        lambda: Title(title=title) if title else generate_title(description),
+        novel_dir or output_dir / "novel_in_progress",
+    )
 
     title_str = title_result.title if hasattr(title_result, "title") else title_result.get("title", str(title_result))
 
@@ -70,6 +91,7 @@ def write_novel(description: str, output_dir: Path, num_chapters: int = 10,
             author=author,
             num_chapters=num_chapters,
             sections_per_chapter=sections_per_chapter,
+            style_directive=style_directive,
         )
         write_metadata(novel_dir, metadata)
 
@@ -78,51 +100,71 @@ def write_novel(description: str, output_dir: Path, num_chapters: int = 10,
             _move_in_progress_files(in_progress, novel_dir)
 
     # step 2: determine plot type
-    plot_type_result = record("Determine plot type",
-                             lambda: determine_plot_type(description), novel_dir)
+    plot_type_result = record("Determine plot type", lambda: determine_plot_type(description), novel_dir)
     plot_type_str = _extract_plot_type(plot_type_result)
 
     # step 3: select themes
-    themes_result = record("Select themes",
-                           lambda: select_themes(description, plot_type_str), novel_dir)
+    themes_result = record("Select themes", lambda: select_themes(description, plot_type_str), novel_dir)
     theme_values = _extract_themes(themes_result)
 
     # step 4: create characters
-    characters_result = record("Create characters",
-                               lambda: create_characters(description, plot_type_str, theme_values), novel_dir)
+    characters_result = record(
+        "Create characters", lambda: create_characters(description, plot_type_str, theme_values), novel_dir
+    )
     characters = _extract_characters(characters_result)
 
     # step 5: create outline
-    outline_text = record("Create outline",
-                          lambda: create_outline(description, plot_type_str, theme_values,
-                                                 characters, num_chapters, sections_per_chapter), novel_dir)
+    outline_text = record(
+        "Create outline",
+        lambda: create_outline(
+            description, plot_type_str, theme_values, characters, num_chapters, sections_per_chapter
+        ),
+        novel_dir,
+    )
     if isinstance(outline_text, dict):
         outline_text = outline_text.get("outline", str(outline_text))
 
     # step 6: enhance outline
-    enhanced_result = record("Enhance outline",
-                             lambda: enhance_outline(outline_text), novel_dir)
+    enhanced_result = record("Enhance outline", lambda: enhance_outline(outline_text), novel_dir)
     enhanced = _extract_enhanced_outline(enhanced_result)
 
     # step 7: define writing style
-    writing_style_result = record("Define writing style",
-                                  lambda: define_writing_style(enhanced.outline, theme_values, style_directive), novel_dir)
+    writing_style_result = record(
+        "Define writing style",
+        lambda: define_writing_style(enhanced.outline, theme_values, style_directive, characters),
+        novel_dir,
+    )
     writing_style = _extract_writing_style(writing_style_result)
+    # Old checkpoints keep their decisions and receive missing craft/voice fields
+    # once. Rich styles take this path without spending another model call.
+    rich_style_result = record(
+        "Enrich writing style",
+        lambda: enrich_writing_style(writing_style, enhanced.outline, theme_values,
+                                    characters, style_directive),
+        novel_dir,
+    )
+    writing_style = _extract_writing_style(rich_style_result)
+    if not writing_style.is_rich():
+        raise ValueError("Writing style enrichment did not produce a complete style sheet")
 
     # step 8: break into chapters
-    chapter_plan_result = record(f"Break into {num_chapters} chapters",
-                                 lambda: break_into_chapters(enhanced, characters, theme_values,
-                                                             plot_type_str, num_chapters), novel_dir)
+    chapter_plan_result = record(
+        f"Break into {num_chapters} chapters",
+        lambda: break_into_chapters(enhanced, characters, theme_values, plot_type_str, num_chapters),
+        novel_dir,
+    )
     chapter_plan = _extract_chapter_plan(chapter_plan_result)
 
     # step 9: cover image — adopt caller-supplied artwork verbatim, else generate
     cover_path = novel_dir / "cover.jpg"
     if cover_image:
-        cover_path = record("Generate cover image",
-                            lambda: use_cover_image(Path(cover_image), novel_dir), novel_dir)
+        cover_path = record("Generate cover image", lambda: use_cover_image(Path(cover_image), novel_dir), novel_dir)
     elif not skip_images():
-        cover_path = record("Generate cover image",
-                            lambda: generate_cover(title_str, author, novel_dir, theme_values, plot_type_str), novel_dir)
+        cover_path = record(
+            "Generate cover image",
+            lambda: generate_cover(title_str, author, novel_dir, theme_values, plot_type_str),
+            novel_dir,
+        )
     if isinstance(cover_path, dict):
         cover_path = Path(cover_path.get("cover_path", novel_dir / "cover.jpg"))
     elif isinstance(cover_path, str):
@@ -133,10 +175,13 @@ def write_novel(description: str, output_dir: Path, num_chapters: int = 10,
     memory_path = novel_dir / "retrieval_memory.json"
     memory = RetrievalMemory.load(memory_path)
     content_by_chapter = {}
+    lines_by_chapter: dict[int, list[dict]] = {}
     chapter_images = {}
+    current_subagent_id: str | None = None
 
     for chapter in chapter_plan.chapters:
         content_by_chapter[chapter.number] = {}
+        lines_by_chapter[chapter.number] = []
 
         # generate chapter image
         if not skip_images():
@@ -146,7 +191,9 @@ def write_novel(description: str, output_dir: Path, num_chapters: int = 10,
                 novel_dir,
             )
             if isinstance(chapter_img, dict):
-                chapter_images[chapter.number] = Path(chapter_img.get("image_path", novel_dir / f"chapter_{chapter.number}.jpg"))
+                chapter_images[chapter.number] = Path(
+                    chapter_img.get("image_path", novel_dir / f"chapter_{chapter.number}.jpg")
+                )
             elif isinstance(chapter_img, str):
                 chapter_images[chapter.number] = Path(chapter_img)
             else:
@@ -161,17 +208,27 @@ def write_novel(description: str, output_dir: Path, num_chapters: int = 10,
         sections = _extract_sections(section_plan_result)
 
         for section in sections:
-            is_final = (chapter.number == num_chapters and section.number == sections_per_chapter)
+            is_final = chapter.number == num_chapters and section.number == sections_per_chapter
+
+            def _do_write_section(
+                ch=chapter, sec=section, txt=all_text, mem=memory, sub_id=current_subagent_id, final=is_final
+            ):
+                return write_section(
+                    ch, sec, txt, mem, characters, writing_style, chapter_plan, final, subagent_id=sub_id
+                )
 
             section_result = record(
-                f"Write chapter {chapter.number} section {section.number}",
-                lambda ch=chapter, sec=section, txt=all_text, mem=memory: write_section(
-                    ch, sec, txt, mem, characters, writing_style, chapter_plan, is_final
-                ),
-                novel_dir,
+                f"Write chapter {chapter.number} section {section.number}", _do_write_section, novel_dir
             )
 
             section_text, _ = _extract_section_result(section_result)
+            section_lines = _extract_section_lines(section_result)
+            # carry the subagent forward so the next scene continues the same
+            # conversation (its context persists; orchestrator pays only for the
+            # new scene prompt).
+            current_subagent_id = getattr(section_result, "subagent_id", None) or (
+                section_result.get("subagent_id") if isinstance(section_result, dict) else None
+            )
             # embed this section into the retrieval memory (idempotent — on resume
             # a cached section is embedded here so later sections can retrieve it).
             section_id = f"ch{chapter.number}.s{section.number}"
@@ -179,18 +236,29 @@ def write_novel(description: str, output_dir: Path, num_chapters: int = 10,
             memory.save(memory_path)
             all_text += "\n\n" + section_text
             content_by_chapter[chapter.number][section.number] = section_text
+            lines_by_chapter[chapter.number].extend(section_lines)
+
+        # speaker-labeled audio segments for this chapter, assembled from the
+        # model's own tagged lines (generated, not parsed).
+        record(
+            f"Write chapter {chapter.number} audio",
+            lambda ch=chapter, ch_lines=lines_by_chapter[chapter.number]: write_chapter_audio(
+                novel_dir, ch.number, ch_lines
+            ),
+            novel_dir,
+        )
 
     # step 11: create epub
     chapters_data = [ch.model_dump() if hasattr(ch, "model_dump") else ch for ch in chapter_plan.chapters]
-    epub_result = record(
-        "Create EPUB",
-        lambda: create_epub(title_str, author, chapters_data, content_by_chapter,
-                            novel_dir, cover_path, chapter_images),
-        novel_dir,
+    # Rebuild all editions from the same final prose, even on resume: cached
+    # JSON paths alone do not prove an exported artifact still exists.
+    editions = write_reading_editions(
+        manuscript_from_sections(title_str, author, chapters_data, content_by_chapter),
+        novel_dir, cover_path, chapter_images,
     )
 
-    # mark finished
-    epub_path = epub_result.epub_path if hasattr(epub_result, "epub_path") else epub_result.get("epub_path", "")
+    # An export failure must not mark a partially published book as finished.
+    epub_path = str(editions["epub"])
     cover_path_str = str(cover_path)
     mark_book_finished(novel_dir, epub_path, cover_path_str)
 
@@ -293,6 +361,7 @@ def _extract_chapter_plan(result) -> ChapterPlan:
 # unwrap a SectionResult (live object or restored-from-json dict) to (text, facts)
 def _extract_section_result(result):
     from models import Fact
+
     if hasattr(result, "text"):
         text = result.text
         raw_facts = result.new_facts
@@ -312,6 +381,17 @@ def _extract_section_result(result):
 
 
 # ##################################################################
+# extract section lines
+# pull the speaker-tagged lines out of a SectionResult (live or restored).
+def _extract_section_lines(result) -> list[dict]:
+    if hasattr(result, "lines"):
+        return result.lines or []
+    if isinstance(result, dict):
+        return result.get("lines", [])
+    return []
+
+
+# ##################################################################
 # extract sections
 # handle both pydantic model and dict formats for sections
 def _extract_sections(result) -> list:
@@ -319,5 +399,6 @@ def _extract_sections(result) -> list:
         return result.sections
     if isinstance(result, dict):
         from models import Section
+
         return [Section(**s) for s in result.get("sections", [])]
     return []

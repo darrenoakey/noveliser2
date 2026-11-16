@@ -1,4 +1,6 @@
-import uuid
+import hashlib
+import html
+import json
 from pathlib import Path
 
 from ebooklib import epub
@@ -9,13 +11,19 @@ from models import EpubResult
 # ##################################################################
 # create epub
 # assemble all content into a properly formatted epub file
-def create_epub(title: str, author: str, chapters_data: list[dict],
-                content_by_chapter: dict[int, dict[int, str]],
-                novel_dir: Path, cover_path: Path,
-                chapter_images: dict[int, Path] | None = None) -> EpubResult:
+def create_epub(
+    title: str,
+    author: str,
+    chapters_data: list[dict],
+    content_by_chapter: dict[int, dict[int, str]],
+    novel_dir: Path,
+    cover_path: Path,
+    chapter_images: dict[int, Path] | None = None,
+) -> EpubResult:
     book = epub.EpubBook()
 
-    book.set_identifier(str(uuid.uuid4()))
+    identity = json.dumps([title, author, chapters_data, content_by_chapter], sort_keys=True)
+    book.set_identifier("urn:sha256:" + hashlib.sha256(identity.encode()).hexdigest())
     book.set_title(title)
     book.set_language("en")
     book.add_author(author)
@@ -32,7 +40,9 @@ p:first-of-type { text-indent: 0; }
 .chapter-image { text-align: center; margin: 1em 0; }
 .chapter-image img { max-width: 100%; height: auto; }
 """
-    style = epub.EpubItem(uid="style", file_name="style/default.css", media_type="text/css", content=css_content.encode())
+    style = epub.EpubItem(
+        uid="style", file_name="style/default.css", media_type="text/css", content=css_content.encode()
+    )
     book.add_item(style)
 
     epub_chapters = []
@@ -45,10 +55,10 @@ p:first-of-type { text-indent: 0; }
 
         if num_chapters > 1:
             chapter_title_text = chapter_data.get("title", f"Chapter {chapter_num}")
-            html_content = f'<h1>Chapter {chapter_num}: {chapter_title_text}</h1>\n'
+            html_content = f"<h1>Chapter {chapter_num}: {html.escape(chapter_title_text)}</h1>\n"
             toc_title = f"Chapter {chapter_num}: {chapter_title_text}"
         else:
-            html_content = f"<h1>{title}</h1>\n"
+            html_content = f"<h1>{html.escape(title)}</h1>\n"
             toc_title = title
 
         if chapter_images and chapter_num in chapter_images:
@@ -63,7 +73,9 @@ p:first-of-type { text-indent: 0; }
                         content=f.read(),
                     )
                 book.add_item(img_item)
-                html_content += f'<div class="chapter-image"><img src="{img_name}" alt="Chapter {chapter_num}"/></div>\n'
+                html_content += (
+                    f'<div class="chapter-image"><img src="{img_name}" alt="Chapter {chapter_num}"/></div>\n'
+                )
 
         for section_num in sorted(section_content.keys()):
             section_text = section_content[section_num]
@@ -87,8 +99,7 @@ p:first-of-type { text-indent: 0; }
         epub_chapters.append(epub_chapter)
         spine.append(epub_chapter)
 
-    if num_chapters > 1:
-        book.toc = epub_chapters
+    book.toc = epub_chapters
 
     book.add_item(epub.EpubNcx())
     book.add_item(epub.EpubNav())

@@ -1,51 +1,34 @@
-# noveliser2 — AI novel generator
+# noveliser2 — operating notes
 
-Entry point: `./run create "<description>" [--title "Exact Title"] --chapters N --sections M --author "Name"`.
-`--title` forces the title (else step 1 generates one). `--cover <path>` adopts an
-existing image as the book cover (converted to cover.jpg, no generation). `continue
-"<title>"` resumes.
-Output goes to `output/<Title>/`; every pipeline step caches a JSON there and `record()`
-skips completed steps, so runs are fully resumable (checkpoint files are raw model dumps,
-not wrapped). The process calls `setproctitle("noveliser2")`, so `pgrep -f "run create"`
-will NOT find it once running — pgrep `noveliser2` or capture `$!`.
+Read `AGENTS.md` and `docs/DOCTRINE.md` for the greenline release rules. Never edit the canonical checkout; worktrees share its venv when they lack their own.
 
-## Model / backend routing
-- Text: `brain.py` calls daz-agent-sdk `agent.ask(tier=Tier.FREE_FAST)`. The active model is
-  set in `~/.daz-agent-sdk/config.yaml` — currently `boringstack:qwen3.6:35b-a3b` (a remote
-  Ollama box — DHCP-assigned IP, was 10.0.0.237, now 10.0.0.42; if unreachable check the
-  asus router's dnsmasq leases for "boringstack"). `chat`/`chat_structured` take an
-  optional `tier=` override.
-- Images: `generate_images.py` calls `agent.image()` with no legacy provider/model
-  override, verifies the durable job is ready and the output is non-empty, and routes
-  only to the Mac mini Codex image service. `--backend arbiter` remains text-only and
-  actively disables image generation rather than silently changing image backends.
-- Embeddings: `agent.embed()` → arbiter on spark (10.0.0.254). 768-dim.
-- The SDK is **editable-installed** in `.venv` (`python -m pip install -e ~/src/daz-agent-sdk
-  --no-deps`; `--no-deps` because of the local-only `arbiter-client` dep). The venv's
-  `bin/pip` shebang is broken (venv was relocated from /Volumes/T9) — always use
-  `.venv/bin/python -m pip`.
+## Commands and artifacts
 
-## Continuity = retrieval memory (NOT an LLM fact-ledger)
-`retrieval_memory.py` is the consistency mechanism: after each section, every sentence is
-embedded (remotely, on spark) and stored; `write_section` retrieves the most relevant prior
-sentences and injects them as "established details", alongside the structured character sheet.
-There is no per-section LLM fact-extraction or contradiction-regeneration (the old
-`fact_ledger.py`, removed). `RetrievalMemory.ensure_section` is idempotent so resume rebuilds
-the index from cached sections. Per section ≈ one boringstack prose call (~165s) + cheap
-remote embeds.
+- `./run create "description" --title "Exact Title" --chapters N --sections M --style "voice brief"`.
+- `./run continue "Title"` resumes cached stages. The author's directive is saved in metadata.
+- Each finished book has an EPUB, `book.json`, `manuscript.md` and a clean `.narration.txt`.
+- `./run export-book output/Title/book.json --audio --icloud --books` advances resumable remote narration, produces chaptered M4B, verifies local iCloud copies and requests Books import. Exit 3 means pending: resume the same command later. Do not poll in an agent turn; sleep and inspect the persisted job on wake.
+- `./run check` runs ruff and all tests, including real daemon revision/style enrichment and real remote TTS; warnings are errors. Use `.venv/bin/python -m pip`, not the relocated venv's broken pip shebang.
+- `./run deploy` installs `~/bin/noveliser2` against canonical source and runs a new-process health check. This CLI has no persistent service to restart.
 
-## Craft
-`craft.py` holds the distilled "Unputdownable Fiction" manual (`docs/unputdownable-fiction.md`)
-as prompt blocks injected into the stages: character engine (Wound/Lie/Want/Need/arc) in
-`create_characters`, macro pacing beats + therefore/but in `create_outline`, scene-vs-sequel +
-disaster in `break_into_sections`, microtension/pacing in `define_writing_style`, and the full
-prose crucible in `write_section`. `Character` and `Section` gained matching model fields
-(all defaulted, so old checkpoints still load).
+## Model/configuration routing
 
-## MEMORY / hardware safety (important)
-This Mac is RAM-constrained (~69GB, often near-full from other services) and has OOM-rebooted
-when a big model was loaded locally. NEVER load an LLM on this machine: prose runs on
-boringstack, embeddings on spark — both remote. Localhost Ollama small models are also SLOW
-here (CPU/contended), so don't route extraction there either. boringstack is a 137GB Apple
-Silicon box; spark is the CUDA arbiter. Quality gate: `ruff` (`.venv/bin/python -m ruff check
-src/`) + `pytest src` (embedding/model tests skip cleanly when a backend is unreachable).
+`brain.py` uses agentd3 conversations for planning. The default is the same proven Fable fiction model as prose; a broad high-tier route exhausted Gemini quota then stalled on provider failover during live enrichment. `agentd3_client.py` runs persistent prose conversations. Non-secret endpoint/model/backend/narrator configuration belongs in ignored `local/config.toml`; CLI overrides use `configure(...)`, never environment variables. Credentials use daz-secrets references, not inline TOML secrets.
+
+Images use the configured durable Codex image service, never an arbiter image fallback. Embeddings and Kokoro narration run remotely on Spark. NEVER load a local language model on this RAM-constrained Mac. Covers/chapter images are always generated unless a supplied cover is adopted.
+
+## Prose quality and continuity
+
+`docs/ai-prose-research.md` records actual Google/source research and analyzes the user's examples. `craft.py` is the standing positive guidance: selective perception, character-specific diction, scene business/subtext, varied rhythm, coherent imagery and endings without routine morals. `WritingStyle` persists these choices plus worked examples and a revision brief. `define_writing_style.enrich_writing_style` fills missing legacy fields without overwriting existing choices; pipeline records enrichment separately.
+
+`prose_checks.py` counts recurring rhetorical habits. Its corpus-calibrated limits are editorial heuristics, not research findings or an authorship detector. No device is categorically banned. `write_section.py` supplies the entire style sheet each time and permits one targeted revision. It keeps the draft when structural/length/speaker checks fail or measured excess does not fall. Rejected revisions retire the conversation so their invented canon cannot leak into later scenes. New threads receive the accepted prose ending.
+
+Continuity retrieval embeds prior sentences remotely and retrieves established details. `SectionResult.lines` retains model-generated speaker tags; ebook prose and the single-narrator script preserve dialogue attribution rather than inventing post-hoc speaker labels.
+
+Structured model replies can contain literal newlines inside a long JSON string. `brain._extract_json` preserves newline/CR/tab content, rejects other raw controls and requires an object; malformed structure receives one real retry before failure. A captured Fable response in `src/style_samples/responses/` guards this case. Corpus excerpts live under `human/` and `generated/`.
+
+## Publication checks
+
+`book.json` is the authoritative final prose. Re-exporting preserves its exact bytes and provenance when content is unchanged; stable SHA-256 cache identities survive Python restarts. Freeze/review the source before synthesis, and require ebook/audio source checksums to agree. Do not copy a changed chunk's audio just because its index matches.
+
+`audiobook.py` bounds every input, proves ordered text coverage, checks item/frame counts and speaking-rate bounds, validates M4B chapter timing and decodes all AAC. Those checks do not prove every pronunciation. `delivery.json` distinguishes a checksum-verified local iCloud copy from server upload, and an import request from an actual Books library entry. Read Books' SQLite library only; never write it directly.

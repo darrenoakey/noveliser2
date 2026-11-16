@@ -90,7 +90,7 @@ def _cosine(a: list[float], b: list[float]) -> float:
 # memory entry
 # a single stored sentence and its embedding, tagged with its section.
 class _Entry:
-    __slots__ = ("section_id", "sentence", "embedding")
+    __slots__ = ("embedding", "section_id", "sentence")
 
     def __init__(self, section_id: str, sentence: str, embedding: list[float]) -> None:
         self.section_id = section_id
@@ -149,10 +149,7 @@ class RetrievalMemory:
     # ##################################################################
     # persistence
     def to_json(self) -> list[dict]:
-        return [
-            {"section_id": e.section_id, "sentence": e.sentence, "embedding": e.embedding}
-            for e in self._entries
-        ]
+        return [{"section_id": e.section_id, "sentence": e.sentence, "embedding": e.embedding} for e in self._entries]
 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -160,7 +157,7 @@ class RetrievalMemory:
             json.dump(self.to_json(), fh, ensure_ascii=False)
 
     @classmethod
-    def load(cls, path: Path) -> "RetrievalMemory":
+    def load(cls, path: Path) -> RetrievalMemory:
         memory = cls()
         if not path.exists():
             return memory

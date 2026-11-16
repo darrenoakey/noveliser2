@@ -71,18 +71,20 @@ def list_books_by_status(output_dir: Path, status: BookStatus) -> list[dict]:
             continue
         metadata = read_metadata(novel_dir)
         if metadata and metadata.status == status:
-            books.append({
-                "title": metadata.title,
-                "description": metadata.description,
-                "created_at": metadata.created_at,
-                "updated_at": metadata.updated_at,
-                "author": metadata.author,
-                "directory": str(novel_dir),
-                "current_step": metadata.current_step,
-                "completed_steps": len(metadata.completed_steps),
-                "epub_path": metadata.epub_path,
-                "cover_path": metadata.cover_path,
-            })
+            books.append(
+                {
+                    "title": metadata.title,
+                    "description": metadata.description,
+                    "created_at": metadata.created_at,
+                    "updated_at": metadata.updated_at,
+                    "author": metadata.author,
+                    "directory": str(novel_dir),
+                    "current_step": metadata.current_step,
+                    "completed_steps": len(metadata.completed_steps),
+                    "epub_path": metadata.epub_path,
+                    "cover_path": metadata.cover_path,
+                }
+            )
     books.sort(key=lambda x: x["updated_at"], reverse=True)
     return books
 

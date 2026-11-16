@@ -18,8 +18,13 @@ def create_characters(description: str, plot_type: str, themes: list[str]) -> Ch
         )
 
     messages = [
-        {"role": "system", "content": "You are a character creation expert. Create compelling characters with distinct personalities and clear roles. If character names are provided in the description, you MUST use those exact names."},
-        {"role": "user", "content": f"""Create 3-8 characters for this story:
+        {
+            "role": "system",
+            "content": "You are a character creation expert. Create compelling characters with distinct personalities and clear roles. If character names are provided in the description, you MUST use those exact names.",
+        },
+        {
+            "role": "user",
+            "content": f"""Create 3-8 characters for this story:
 
 Description: {description}
 Plot Type: {plot_type}
@@ -27,6 +32,7 @@ Themes: {theme_text}
 
 Create characters with full biographies and personality traits.
 
-{CHARACTER_ENGINE_INSTRUCTION}{character_instruction}"""},
+{CHARACTER_ENGINE_INSTRUCTION}{character_instruction}""",
+        },
     ]
     return chat_structured(messages, CharactersList)

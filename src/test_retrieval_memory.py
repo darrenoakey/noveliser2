@@ -1,16 +1,16 @@
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
-from typing import Any, Generator
+from collections.abc import Generator
+from pathlib import Path
+from typing import Any
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from retrieval_memory import _cosine, split_sentences  # noqa: E402
-
+from retrieval_memory import _cosine, split_sentences
 
 EMBEDDING_SERVICE_SOURCE = r"""
 import json
@@ -146,9 +146,7 @@ def test_cosine_identity_and_orthogonal() -> None:
     assert _cosine([1.0, 0.0], [0.0, 1.0]) == pytest.approx(0.0)
 
 
-def test_memory_uses_http_config_and_persists(
-    tmp_path: Path, embedding_service: str
-) -> None:
+def test_memory_uses_http_config_and_persists(tmp_path: Path, embedding_service: str) -> None:
     result = run_memory_integration(tmp_path, embedding_service)
     assert result["first_count"] == 3
     assert result["second_count"] == 0

@@ -1,14 +1,13 @@
 import hashlib
 import json
-import os
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 from uuid import uuid4
 
+import pytest
 from daz_agent_sdk import Capability, ImageResult, ModelInfo, Tier
 from PIL import Image
-import pytest
 
 from generate_images import (
     LEGACY_IMAGE_BACKENDS,
@@ -44,17 +43,13 @@ def test_image_backend_routes_only_sdk_to_igs() -> None:
 
 @pytest.mark.parametrize("backend", sorted(LEGACY_IMAGE_BACKENDS))
 def test_legacy_image_backends_fail_closed(backend: str) -> None:
-    with pytest.raises(
-        ValueError, match="actively disabled; use the Mac mini Codex image service"
-    ):
+    with pytest.raises(ValueError, match="actively disabled; use the Mac mini Codex image service"):
         validate_image_backend(backend)
 
 
 def test_arbiter_process_cannot_submit_image_job(tmp_path: Path) -> None:
     output_path = tmp_path / "blocked.jpg"
     source_directory = Path(__file__).resolve().parent
-    process_environment = os.environ.copy()
-    process_environment["NOVELISER2_BACKEND"] = "arbiter"
     completed = subprocess.run(
         [
             sys.executable,
@@ -62,6 +57,7 @@ def test_arbiter_process_cannot_submit_image_job(tmp_path: Path) -> None:
             (
                 "import sys; "
                 "sys.path.insert(0, sys.argv[1]); "
+                "from backend import configure; configure(backend='arbiter'); "
                 "from generate_images import _run_generate_image; "
                 "_run_generate_image('must remain blocked', __import__('pathlib').Path(sys.argv[2]), 32, 32)"
             ),
@@ -69,9 +65,9 @@ def test_arbiter_process_cannot_submit_image_job(tmp_path: Path) -> None:
             str(output_path),
         ],
         cwd=tmp_path,
-        env=process_environment,
         capture_output=True,
         text=True,
+        check=False,
     )
     assert completed.returncode != 0
     assert "actively disabled; use the Mac mini Codex image service" in completed.stderr
